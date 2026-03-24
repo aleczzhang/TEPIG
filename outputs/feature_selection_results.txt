@@ -1,0 +1,135 @@
+================================================================================
+TEPIG FEATURE SELECTION RESULTS
+================================================================================
+
+Subjects loaded  : 116
+Slides loaded    : 151
+Features (raw)   : 77
+Pruning threshold: |corr| > 0.95
+
+--------------------------------------------------------------------------------
+DROPPED FEATURES (24):
+--------------------------------------------------------------------------------
+  Energy Luminal Space
+  Eosinophilic Area By Object Area
+  Luminal Space Area By Object Area
+  Mean Green Nuclei
+  Max Distance Transform Eosinophilic
+  Total Object Perimeter
+  Area (pixel^2)
+  Mean Blue Nuclei
+  Mean Distance Transform Eosinophilic
+  Mean Distance Transform Nuclei
+  Mean Red Nuclei
+  Energy Eosinophilic
+  Max Distance Transform By Eosinophilic Area
+  Max Distance Transform By Luminal Space Area
+  Max Distance Transform By Nuclei Area
+  Max Distance Transform By Object Area Eosinophilic
+  Max Distance Transform By Object Area Luminal Space
+  Mean Distance Transform By Nuclei Area
+  Mean Distance Transform Luminal Space
+  Minor Axis Length
+  Nuclei Area
+  Standard Deviation Blue Eosinophilic
+  Sum Distance Transform By Eosinophilic Area
+  Sum Distance Transform By Nuclei Area
+
+Features remaining: 53
+
+================================================================================
+ALL 53 FEATURES RANKED BY MAX |CORR| WITH OTHERS
+(low = more independent; better candidate for nonzero beta_star)
+================================================================================
+Rank   Feature                                                 Max |corr|
+--------------------------------------------------------------------------
+  1    Standard Deviation Red Nuclei                         0.524 <-- candidate
+  2    Mean Distance Transform By Object Area Luminal Space  0.639 <-- candidate
+  3    Standard Deviation Blue Nuclei                        0.708 <-- candidate
+  4    Nuclei Number                                         0.720 <-- candidate
+  5    Mean Red Eosinophilic                                 0.778 <-- candidate
+  6    Average TBM Thickness                                 0.799 <-- candidate
+  7    Contrast Eosinophilic                                 0.803
+  8    Mean Distance Transform By Eosinophilic Area          0.803
+  9    Total Object Aspect Ratio                             0.813
+  10   Correlation Luminal Space                             0.814
+  11   Luminal Fraction                                      0.840
+  12   Average Cell Thickness                                0.840
+  13   Standard Deviation Green Nuclei                       0.841
+  14   Homogeneity Nuclei                                    0.841
+  15   Energy Nuclei                                         0.841
+  16   Mean Distance Transform By Object Area Eosinophilic   0.852
+  17   Mean Distance Transform By Luminal Space Area         0.852
+  18   Contrast Luminal Space                                0.859
+  19   Luminal Space Area                                    0.868
+  20   Mean Green Eosinophilic                               0.872
+  21   Mean Blue Eosinophilic                                0.872
+  22   Correlation Eosinophilic                              0.880
+  23   Sum Distance Transform Luminal Space                  0.885
+  24   Mean Red Luminal Space                                0.887
+  25   Nuclei Area By Object Area                            0.888
+  26   Radius (pixel)                                        0.892
+  27   Standard Deviation Red Luminal Space                  0.894
+  28   Sum Distance Transform Nuclei                         0.898
+  29   Mean Aspect Ratio Nuclei                              0.900
+  30   Standard Deviation Aspect Ratio Nuclei                0.900
+  31   Max Distance Transform Nuclei                         0.907
+  32   Sum Distance Transform By Luminal Space Area          0.911
+  33   Sum Distance Transform By Object Area Nuclei          0.912
+  34   Total Object Area                                     0.923
+  35   Major Axis Length                                     0.923
+  36   Homogeneity Luminal Space                             0.923
+  37   Sum Distance Transform By Object Area Luminal Space   0.926
+  38   Max Distance Transform Luminal Space                  0.926
+  39   Mean Green Luminal Space                              0.927
+  40   Mean Blue Luminal Space                               0.927
+  41   Sum Distance Transform By Object Area Eosinophilic    0.930
+  42   Homogeneity Eosinophilic                              0.930
+  43   Standard Deviation Green Eosinophilic                 0.931
+  44   Standard Deviation Green Luminal Space                0.938
+  45   Standard Deviation Blue Luminal Space                 0.938
+  46   Correlation Nuclei                                    0.939
+  47   Mean Nuclear Area                                     0.939
+  48   Max Distance Transform By Object Area Nuclei          0.940
+  49   Mean Distance Transform By Object Area Nuclei         0.940
+  50   Contrast Nuclei                                       0.945
+  51   Standard Deviation Red Eosinophilic                   0.945
+  52   Eosinophilic Area                                     0.949
+  53   Sum Distance Transform Eosinophilic                   0.949
+
+================================================================================
+CANDIDATE FEATURES FOR BETA_STAR (max |corr| with any other < 0.8)
+================================================================================
+Feature                                                 Max |corr|
+--------------------------------------------------------------------
+  Standard Deviation Red Nuclei                         0.524
+  Mean Distance Transform By Object Area Luminal Space  0.639
+  Standard Deviation Blue Nuclei                        0.708
+  Nuclei Number                                         0.720
+  Mean Red Eosinophilic                                 0.778
+  Average TBM Thickness                                 0.799
+
+Pairwise correlations among candidates:
+                                                      Standard Deviation Red Nuclei  Mean Distance Transform By Object Area Luminal Space  Standard Deviation Blue Nuclei  Nuclei Number  Mean Red Eosinophilic  Average TBM Thickness
+Standard Deviation Red Nuclei                                                 1.000                                                 0.341                           0.497         -0.402                 -0.365                 -0.130
+Mean Distance Transform By Object Area Luminal Space                          0.341                                                 1.000                           0.374         -0.552                 -0.134                 -0.208
+Standard Deviation Blue Nuclei                                                0.497                                                 0.374                           1.000         -0.005                  0.309                 -0.246
+Nuclei Number                                                                -0.402                                                -0.552                          -0.005          1.000                  0.589                 -0.195
+Mean Red Eosinophilic                                                        -0.365                                                -0.134                           0.309          0.589                  1.000                 -0.147
+Average TBM Thickness                                                        -0.130                                                -0.208                          -0.246         -0.195                 -0.147                  1.000
+
+================================================================================
+PAIRWISE CORRELATIONS AMONG TOP-10 MOST INDEPENDENT FEATURES
+Pick 3-5 with low values both here and in the ranked list above.
+================================================================================
+                                                      Standard Deviation Red Nuclei  Mean Distance Transform By Object Area Luminal Space  Standard Deviation Blue Nuclei  Nuclei Number  Mean Red Eosinophilic  Average TBM Thickness  Contrast Eosinophilic  Mean Distance Transform By Eosinophilic Area  Total Object Aspect Ratio  Correlation Luminal Space
+Standard Deviation Red Nuclei                                                 1.000                                                 0.341                           0.497         -0.402                 -0.365                 -0.130                  0.158                                        -0.223                     -0.048                      0.524
+Mean Distance Transform By Object Area Luminal Space                          0.341                                                 1.000                           0.374         -0.552                 -0.134                 -0.208                 -0.005                                         0.079                     -0.062                      0.499
+Standard Deviation Blue Nuclei                                                0.497                                                 0.374                           1.000         -0.005                  0.309                 -0.246                  0.069                                         0.140                     -0.003                      0.276
+Nuclei Number                                                                -0.402                                                -0.552                          -0.005          1.000                  0.589                 -0.195                 -0.251                                         0.411                      0.098                     -0.331
+Mean Red Eosinophilic                                                        -0.365                                                -0.134                           0.309          0.589                  1.000                 -0.147                  0.061                                         0.239                      0.023                     -0.248
+Average TBM Thickness                                                        -0.130                                                -0.208                          -0.246         -0.195                 -0.147                  1.000                  0.374                                        -0.654                      0.072                      0.033
+Contrast Eosinophilic                                                         0.158                                                -0.005                           0.069         -0.251                  0.061                  0.374                  1.000                                        -0.803                     -0.127                     -0.149
+Mean Distance Transform By Eosinophilic Area                                 -0.223                                                 0.079                           0.140          0.411                  0.239                 -0.654                 -0.803                                         1.000                     -0.010                     -0.079
+Total Object Aspect Ratio                                                    -0.048                                                -0.062                          -0.003          0.098                  0.023                  0.072                 -0.127                                        -0.010                      1.000                      0.069
+Correlation Luminal Space                                                     0.524                                                 0.499                           0.276         -0.331                 -0.248                  0.033                 -0.149                                        -0.079                      0.069                      1.000
