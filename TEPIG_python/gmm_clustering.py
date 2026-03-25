@@ -20,7 +20,7 @@ Why G=2 clusters?
   Confirmed by professor. In kidney pathology, tubules broadly split into two
   populations: relatively normal tubules and atrophic/injured tubules.
 
-Outputs saved to /Users/25AlecZ/Documents/TEPIG/outputs/:
+Outputs saved to outputs/ (relative to repo root):
   - gmm_model.pkl            : the fitted GaussianMixture object
   - cluster_results.pkl      : per-subject, per-slide clustering results and tensors
   - remaining_features.txt   : the 53 features kept after correlation pruning
@@ -35,8 +35,9 @@ from sklearn.mixture import GaussianMixture
 from utils import load_tubule_data, build_naive_average, prune_correlated_features, get_subject
 
 # ── Config ─────────────────────────────────────────────────────────────────────
-BASE        = '/Users/25AlecZ/Documents/TEPIG/Object-Level data/Donors_included_after_biopsy_QCed'
-OUT_DIR     = '/Users/25AlecZ/Documents/TEPIG/outputs'
+_HERE       = os.path.dirname(os.path.abspath(__file__))
+BASE        = os.path.join(_HERE, '..', 'Object_level_data', 'Donors_included_after_biopsy_QCed')
+OUT_DIR     = os.path.join(_HERE, '..', 'outputs')
 CORR_THRESH = 0.95   # same pruning threshold as explore_features.py
 DROP_COLS   = ['compartment_id', 'In Medulla']
 G           = 2      # number of clusters (confirmed by professor)

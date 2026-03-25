@@ -24,12 +24,13 @@ import matplotlib.pyplot as plt
 from utils import load_tubule_data, build_naive_average, prune_correlated_features
 
 # ── Config ────────────────────────────────────────────────────────────────────
-BASE        = '/Users/25AlecZ/Documents/TEPIG/Object-Level data/Donors_included_after_biopsy_QCed'
+_HERE       = os.path.dirname(os.path.abspath(__file__))
+BASE        = os.path.join(_HERE, '..', 'Object_level_data', 'Donors_included_after_biopsy_QCed')
 CORR_THRESH = 0.95   # greedily remove one feature from each pair above this
 CAND_THRESH = 0.80   # candidate beta_star features: max |corr| with any other < this
 N_TOP       = 10     # show pairwise correlations among the N most independent features
 DROP_COLS   = ['compartment_id', 'In Medulla']
-OUT_DIR     = '/Users/25AlecZ/Documents/TEPIG/outputs'
+OUT_DIR     = os.path.join(_HERE, '..', 'outputs')
 
 # ── Setup output directory ─────────────────────────────────────────────────────
 os.makedirs(OUT_DIR, exist_ok=True)
