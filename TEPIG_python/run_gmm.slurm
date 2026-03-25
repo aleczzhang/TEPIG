@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=gmm_clustering
-#SBATCH --account=staraptor-lab
+#SBATCH --account=staraptor-lab-aac
 #SBATCH --partition=standard
 #SBATCH --time=01:00:00
 #SBATCH --cpus-per-task=4

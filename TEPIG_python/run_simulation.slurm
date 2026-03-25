@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=tepig_simulation
-#SBATCH --account=staraptor-lab
+#SBATCH --account=staraptor-lab-aac
 #SBATCH --partition=standard
 #SBATCH --time=12:00:00
 #SBATCH --cpus-per-task=16
