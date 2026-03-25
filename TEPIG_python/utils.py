@@ -30,7 +30,11 @@ def get_subject(folder_name):
     Used by: explore_features.py, gmm_clustering.py
     """
     parts = folder_name.replace('_', ' ').split()
-    return ' '.join(parts[:-2])
+    subj = ' '.join(parts[:-2])
+    # Edge case: folder has no slide number (e.g. 'H22-16058 PAS') -> drop only 'PAS'
+    if not subj:
+        subj = ' '.join(parts[:-1])
+    return subj
 
 
 def load_tubule_data(base, drop_cols=None):
