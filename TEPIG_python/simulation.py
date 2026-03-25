@@ -44,7 +44,7 @@ from Mainfunction_albet import Mainfunction_albet, _glmnet_lasso
 from SLasso_MSE import lambda_CV_mse
 
 # ── Config ─────────────────────────────────────────────────────────────────────
-OUT_DIR       = '/Users/25AlecZ/Documents/TEPIG/outputs'
+OUT_DIR       = os.path.join(os.path.dirname(__file__), '..', 'outputs')
 
 # Beta_star: three most independent features (from explore_features.py output),
 # each assigned value 15 so the signal is large enough to detect with lasso.
