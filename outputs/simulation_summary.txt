@@ -1,0 +1,16 @@
+======================================================================
+TEPIG SIMULATION SUMMARY
+======================================================================
+
+B=200 repetitions | n=116 subjects | q=53 features | G=2 clusters | S=2 slides
+beta_star: 3 nonzero features at value 15.0
+Nonzero: Average TBM Thickness, Standard Deviation Red Nuclei, Total Object Aspect Ratio
+alpha_true (normalised): [0.3333333333333333, 0.6666666666666666]
+gamma_true (normalised): [0.6666666666666666, 0.3333333333333333]
+
+Estimator             TPR      FPR    L1 bias        MSE
+--------------------------------------------------------
+  tepig             1.000    0.147      0.157  24567.569
+  tepig_joint       1.000    0.070      0.103  19465.175
+  naive             1.000    0.115      0.204  19418.370
+  oracle            1.000    0.220      0.087      1.558
