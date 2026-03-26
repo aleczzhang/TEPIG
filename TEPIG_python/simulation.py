@@ -112,6 +112,18 @@ gamma_norm = GAMMA_TRUE / np.sum(np.abs(GAMMA_TRUE))   # [2/3, 1/3]
 # True signal for all subjects: y_true[i] = sum_{g,j,s} alpha[g]*beta[j]*gamma[s]*X[g,j,s,i]
 y_true = np.einsum('gjsn,g,j,s->n', X_all, alpha_norm, beta_star, gamma_norm)
 
+# ── Joint W: collapse cluster and slide dimensions ─────────────────────────────
+# Combine alpha (G,) and gamma (S,) into a single weight vector W of shape (G*S,).
+# This reduces the 3-mode problem back to the 2-mode CLUSSO structure:
+#   y_i = W' X_collapsed[:,:,i] beta
+# where X_collapsed is (G*S, q, n) = (4, 53, n).
+#
+# X_all is (G, q, S, n). To get (G*S, q, n):
+#   transpose to (G, S, q, n) then reshape to (G*S, q, n)
+# Row g*S+s of X_collapsed[:,: ,i] = X_all[g,:,s,i]
+# i.e. the 4 rows are: (cluster1,slide1), (cluster1,slide2), (cluster2,slide1), (cluster2,slide2)
+X_collapsed = X_all.transpose(0, 2, 1, 3).reshape(G * S, q, n)   # (4, 53, 116)
+
 
 # ── TEPIG: alternating 3-mode structured lasso ────────────────────────────────
 
@@ -263,8 +275,10 @@ def compute_metrics(beta_hat, y, y_pred):
 
     TPR : among true nonzero entries of beta_star, fraction estimated nonzero
     FPR : among true zero    entries of beta_star, fraction estimated nonzero
-    L1  : sum |beta_hat - beta_star|   (estimation bias on L1 scale)
-    MSE : mean (y_i - y_hat_i)^2
+    L1  : sum |beta_hat_norm - beta_star_norm|  (both L1-normalised)
+          Matches R code: CLUSSO_Functions_Project1_6_16_23.R lines 177, 320
+          beta_star /= sum(|beta_star|) and beta_hat /= sum(|beta_hat|) before comparison
+    MSE : mean (y_i - y_hat_i)^2  using original-scale predictions (R code line 333)
     """
     nz     = beta_star != 0          # true nonzero mask
     z      = ~nz                     # true zero mask
@@ -272,7 +286,13 @@ def compute_metrics(beta_hat, y, y_pred):
 
     tpr = float(hat_nz[nz].mean()) if nz.sum() > 0 else float('nan')
     fpr = float(hat_nz[z].mean())  if z.sum()  > 0 else float('nan')
-    l1  = float(np.sum(np.abs(beta_hat - beta_star)))
+
+    # L1 bias: normalise both to unit L1 norm before comparing (matches R code)
+    beta_star_norm = beta_star / np.sum(np.abs(beta_star))
+    beta_hat_norm  = (beta_hat / np.sum(np.abs(beta_hat))
+                      if np.sum(np.abs(beta_hat)) > 0 else beta_hat.copy())
+    l1  = float(np.sum(np.abs(beta_hat_norm - beta_star_norm)))
+
     mse = float(np.mean((y - y_pred) ** 2))
     return tpr, fpr, l1, mse
 
@@ -327,6 +347,36 @@ def run_one_sim(seed):
                              for i in range(n)])
     results['naive'] = compute_metrics(best_b_naive, y, y_pred_naive)
 
+    # ── Joint W TEPIG ─────────────────────────────────────────────────────────
+    # Collapse cluster and slide dimensions into one weight vector W of shape (G*S=4,).
+    # X_collapsed is (G*S, q, n) = (4, 53, n) — same structure as CLUSSO but p=4.
+    # This lets us reuse Mainfunction_albet directly, alternating between W and beta.
+    GS = G * S
+    cv_mse_joint = [
+        lambda_CV_mse(X_collapsed, y, np.ones(GS) / GS, np.ones(q) / q, lam)
+        for lam in LAM_GRID
+    ]
+    best_lam_joint = LAM_GRID[int(np.argmin(cv_mse_joint))]
+
+    best_mse_joint = np.inf
+    best_b_joint   = np.zeros(q)
+    best_w_joint   = np.ones(GS) / GS
+    for _ in range(M_INIT):
+        w0  = rng.dirichlet(np.ones(GS))
+        b0  = rng.uniform(-1, 1, q)
+        res = Mainfunction_albet(X_collapsed, y, w0, b0, best_lam_joint)
+        w_j, b_j = res['alpha'], res['bet']
+        y_pred_j = np.array([w_j @ X_collapsed[:, :, i] @ b_j for i in range(n)])
+        mse_j    = float(np.mean((y - y_pred_j) ** 2))
+        if mse_j < best_mse_joint:
+            best_mse_joint = mse_j
+            best_b_joint   = b_j
+            best_w_joint   = w_j
+
+    y_pred_joint = np.array([best_w_joint @ X_collapsed[:, :, i] @ best_b_joint
+                             for i in range(n)])
+    results['tepig_joint'] = compute_metrics(best_b_joint, y, y_pred_joint)
+
     # ── Oracle TEPIG ──────────────────────────────────────────────────────────
     # Fix true alpha_norm and gamma_norm; only estimate beta via lasso.
     # This is the best achievable estimator given knowledge of the true structure.
@@ -369,7 +419,7 @@ if __name__ == '__main__':
 
     # ── Collect and summarise ──────────────────────────────────────────────────
     print("\nSummarising results...")
-    estimators = ['tepig', 'naive', 'oracle']
+    estimators = ['tepig', 'tepig_joint', 'naive', 'oracle']
     metric_keys = ['tpr', 'fpr', 'l1', 'mse']
 
     summary = {est: {m: [] for m in metric_keys} for est in estimators}
