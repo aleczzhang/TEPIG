@@ -267,6 +267,80 @@ def tepig_select_and_fit(X, y, rng):
     return best_res   # (alpha_hat, beta_hat, gamma_hat)
 
 
+# ── TEPIG Full: proximal gradient descent (FISTA) with group lasso ────────────
+
+def proxgrad_fit(X, y, lam, max_iter=2000, tol=1e-6):
+    """
+    Fit full B tensor model (no low-rank assumption) via FISTA + group lasso.
+
+    Model:   y_i = intercept + <X[:,:,:,i], B> + eps_i
+    Penalty: lam * sum_j ||B[:,j,:]||_F   (group lasso — zero out whole features)
+
+    B appears linearly so the problem is globally convex: FISTA finds the
+    global optimum (unlike ALS which can get stuck in local minima).
+
+    Parameters
+    ----------
+    X   : (G, q, S, n_tr)  training tensor
+    y   : (n_tr,)           training responses
+    lam : group lasso regularisation parameter
+
+    Returns
+    -------
+    intercept : float
+    B         : (G, q, S)
+    """
+    G, q, S, n_tr = X.shape
+    d      = G * q * S
+    X_flat = X.reshape(d, n_tr).T          # (n_tr, d)
+
+    # Lipschitz constant of gradient = sigma_max(X_flat)^2 / n_tr
+    sigma_max = np.linalg.svd(X_flat, compute_uv=False)[0]
+    L         = float(sigma_max ** 2) / n_tr
+    eta       = 1.0 / L
+    threshold = eta * lam
+
+    # FISTA iterates
+    x         = np.zeros(d)    # current B (flattened)
+    z         = np.zeros(d)    # momentum point
+    t         = 1.0
+    intercept = float(np.mean(y))
+
+    for _ in range(max_iter):
+        x_old = x.copy()
+
+        # Update intercept: mean residual at momentum point
+        pred_z    = X_flat @ z
+        intercept = float(np.mean(y - pred_z))
+
+        # Gradient of squared loss at z
+        residuals = y - intercept - pred_z
+        grad      = -(1.0 / n_tr) * (X_flat.T @ residuals)    # (d,)
+
+        # Gradient step then group soft-thresholding
+        v   = (z - eta * grad).reshape(G, q, S)
+        for j in range(q):
+            block = v[:, j, :]                                  # (G, S)
+            norm  = float(np.linalg.norm(block))
+            if norm > threshold:
+                v[:, j, :] = (1.0 - threshold / norm) * block
+            else:
+                v[:, j, :] = 0.0
+        x = v.reshape(-1)
+
+        # FISTA momentum update
+        t_new = (1.0 + np.sqrt(1.0 + 4.0 * t * t)) / 2.0
+        z     = x + ((t - 1.0) / t_new) * (x - x_old)
+        t     = t_new
+
+        if np.max(np.abs(x - x_old)) < tol:
+            break
+
+    # Final intercept with converged x
+    intercept = float(np.mean(y - X_flat @ x))
+    return intercept, x.reshape(G, q, S)
+
+
 # ── Metrics ────────────────────────────────────────────────────────────────────
 
 def compute_metrics(beta_hat, y, y_pred):
@@ -377,6 +451,46 @@ def run_one_sim(seed):
                              for i in range(n)])
     results['tepig_joint'] = compute_metrics(best_b_joint, y, y_pred_joint)
 
+    # ── TEPIG Full (proximal gradient, no low-rank assumption) ───────────────
+    # B is a full (G, q, S) tensor; group lasso selects features.
+    # Globally convex: FISTA finds global optimum, no random restarts needed.
+    #
+    # Feature importance proxy: ||B[:,j,:]||_F  (Frobenius norm of feature j block)
+    # A feature is "selected" if its block is nonzero after group soft-thresholding.
+    d_full      = G * q * S
+    X_flat_full = X_all.reshape(d_full, n).T   # (n, d_full)
+
+    # Lambda_max: smallest lam that zeros ALL groups from the first prox step.
+    # At B=0, intercept=mean(y): grad[:,j,:] = -(1/n)*sum_i X[:,j,:,i]*(y_i-mean(y))
+    # Group j is zeroed when lam >= ||grad[:,j,:]||_F  =>  lam_max = max_j of that norm.
+    resid_0         = y - float(np.mean(y))
+    grad_0          = (-(1.0 / n) * (X_flat_full.T @ resid_0)).reshape(G, q, S)
+    lam_max_full    = float(max(np.linalg.norm(grad_0[:, j, :]) for j in range(q)))
+    proxgrad_lam_grid = np.logspace(
+        np.log10(max(lam_max_full / 1000.0, 1e-8)),
+        np.log10(max(lam_max_full,          1e-4)),
+        15
+    )
+
+    folds_full  = _make_folds(n, rng)
+    all_idx_full = list(range(n))
+    cv_mse_full = []
+    for lam in proxgrad_lam_grid:
+        fold_mse = []
+        for k in range(5):
+            te  = folds_full[k]
+            tr  = [i for i in all_idx_full if i not in te]
+            ic, B = proxgrad_fit(X_all[:, :, :, tr], y[tr], lam)
+            y_pred_te = ic + X_all[:, :, :, te].reshape(d_full, len(te)).T @ B.reshape(-1)
+            fold_mse.append(float(np.mean((y[te] - y_pred_te) ** 2)))
+        cv_mse_full.append(float(np.mean(fold_mse)))
+
+    best_lam_full       = proxgrad_lam_grid[int(np.argmin(cv_mse_full))]
+    ic_full, B_full     = proxgrad_fit(X_all, y, best_lam_full)
+    beta_hat_full       = np.array([float(np.linalg.norm(B_full[:, j, :])) for j in range(q)])
+    y_pred_full         = ic_full + X_flat_full @ B_full.reshape(-1)
+    results['tepig_grad'] = compute_metrics(beta_hat_full, y, y_pred_full)
+
     # ── Oracle TEPIG ──────────────────────────────────────────────────────────
     # Fix true alpha_norm and gamma_norm; only estimate beta via lasso.
     # This is the best achievable estimator given knowledge of the true structure.
@@ -419,7 +533,7 @@ if __name__ == '__main__':
 
     # ── Collect and summarise ──────────────────────────────────────────────────
     print("\nSummarising results...")
-    estimators = ['tepig', 'tepig_joint', 'naive', 'oracle']
+    estimators = ['tepig', 'tepig_joint', 'tepig_grad', 'naive', 'oracle']
     metric_keys = ['tpr', 'fpr', 'l1', 'mse']
 
     summary = {est: {m: [] for m in metric_keys} for est in estimators}
