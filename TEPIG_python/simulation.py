@@ -291,8 +291,21 @@ def proxgrad_fit(X, y, lam, max_iter=2000, tol=1e-6):
     B         : (G, q, S)
     """
     G, q, S, n_tr = X.shape
-    d      = G * q * S
-    X_flat = X.reshape(d, n_tr).T          # (n_tr, d)
+    d = G * q * S
+
+    # Standardise each feature group to unit mean squared Frobenius norm across
+    # subjects. Without this, features with large X values dominate the gradient
+    # and get selected by group lasso regardless of their correlation with y.
+    gnorms = np.array([
+        float(np.sqrt(np.mean(np.sum(X[:, j, :, :] ** 2, axis=(0, 1)))))
+        for j in range(q)
+    ])
+    gnorms    = np.where(gnorms > 1e-10, gnorms, 1.0)
+    Xs        = np.clip(
+        X / gnorms[np.newaxis, :, np.newaxis, np.newaxis],
+        -1e3, 1e3
+    )   # (G,q,S,n_tr) — clip prevents overflow from near-zero gnorm features
+    X_flat    = Xs.reshape(d, n_tr).T                                # (n_tr, d)
 
     # Lipschitz constant of gradient = sigma_max(X_flat)^2 / n_tr
     sigma_max = np.linalg.svd(X_flat, compute_uv=False)[0]
@@ -301,7 +314,7 @@ def proxgrad_fit(X, y, lam, max_iter=2000, tol=1e-6):
     threshold = eta * lam
 
     # FISTA iterates
-    x         = np.zeros(d)    # current B (flattened)
+    x         = np.zeros(d)    # current B_standardised (flattened)
     z         = np.zeros(d)    # momentum point
     t         = 1.0
     intercept = float(np.mean(y))
@@ -318,7 +331,7 @@ def proxgrad_fit(X, y, lam, max_iter=2000, tol=1e-6):
         grad      = -(1.0 / n_tr) * (X_flat.T @ residuals)    # (d,)
 
         # Gradient step then group soft-thresholding
-        v   = (z - eta * grad).reshape(G, q, S)
+        v = (z - eta * grad).reshape(G, q, S)
         for j in range(q):
             block = v[:, j, :]                                  # (G, S)
             norm  = float(np.linalg.norm(block))
@@ -336,9 +349,13 @@ def proxgrad_fit(X, y, lam, max_iter=2000, tol=1e-6):
         if np.max(np.abs(x - x_old)) < tol:
             break
 
-    # Final intercept with converged x
-    intercept = float(np.mean(y - X_flat @ x))
-    return intercept, x.reshape(G, q, S)
+    # Scale B back to original feature units: B_orig[:,j,:] = B_std[:,j,:] / gnorms[j]
+    B_std     = x.reshape(G, q, S)
+    B         = B_std / gnorms[np.newaxis, :, np.newaxis]
+    # Recompute intercept with original-scale B
+    X_flat_orig = X.reshape(d, n_tr).T
+    intercept   = float(np.mean(y - X_flat_orig @ B.reshape(-1)))
+    return intercept, B
 
 
 # ── Metrics ────────────────────────────────────────────────────────────────────
@@ -460,12 +477,18 @@ def run_one_sim(seed):
     d_full      = G * q * S
     X_flat_full = X_all.reshape(d_full, n).T   # (n, d_full)
 
-    # Lambda_max: smallest lam that zeros ALL groups from the first prox step.
-    # At B=0, intercept=mean(y): grad[:,j,:] = -(1/n)*sum_i X[:,j,:,i]*(y_i-mean(y))
-    # Group j is zeroed when lam >= ||grad[:,j,:]||_F  =>  lam_max = max_j of that norm.
-    resid_0         = y - float(np.mean(y))
-    grad_0          = (-(1.0 / n) * (X_flat_full.T @ resid_0)).reshape(G, q, S)
-    lam_max_full    = float(max(np.linalg.norm(grad_0[:, j, :]) for j in range(q)))
+    # Lambda_max on standardised X (must match standardisation inside proxgrad_fit).
+    gnorms_full = np.array([
+        float(np.sqrt(np.mean(np.sum(X_all[:, j, :, :] ** 2, axis=(0, 1)))))
+        for j in range(q)
+    ])
+    gnorms_full   = np.where(gnorms_full > 1e-10, gnorms_full, 1.0)
+    Xs_flat_full  = np.clip(
+        X_all / gnorms_full[np.newaxis, :, np.newaxis, np.newaxis], -1e3, 1e3
+    ).reshape(d_full, n).T    # (n, d_full) standardised + clipped
+    resid_0       = y - float(np.mean(y))
+    grad_0        = (-(1.0 / n) * (Xs_flat_full.T @ resid_0)).reshape(G, q, S)
+    lam_max_full  = float(max(np.linalg.norm(grad_0[:, j, :]) for j in range(q)))
     proxgrad_lam_grid = np.logspace(
         np.log10(max(lam_max_full / 1000.0, 1e-8)),
         np.log10(max(lam_max_full,          1e-4)),
@@ -485,7 +508,16 @@ def run_one_sim(seed):
             fold_mse.append(float(np.mean((y[te] - y_pred_te) ** 2)))
         cv_mse_full.append(float(np.mean(fold_mse)))
 
-    best_lam_full       = proxgrad_lam_grid[int(np.argmin(cv_mse_full))]
+    # 1-SE rule: pick the largest lambda whose CV MSE is within 1 SE of the minimum.
+    # Plain argmin tends to pick over-fitted (too many features) models when signal
+    # is strong; 1-SE rule enforces sparsity without sacrificing much prediction.
+    cv_mse_arr   = np.array(cv_mse_full)
+    best_idx     = int(np.argmin(cv_mse_arr))
+    cv_mse_se    = np.std(cv_mse_arr) / np.sqrt(5)   # SE across lambda values (approx)
+    threshold_1se = cv_mse_arr[best_idx] + cv_mse_se
+    # largest lambda (most sparse) still within threshold
+    sparse_idx   = np.where(cv_mse_arr <= threshold_1se)[0]
+    best_lam_full = proxgrad_lam_grid[int(sparse_idx[-1])]
     ic_full, B_full     = proxgrad_fit(X_all, y, best_lam_full)
     beta_hat_full       = np.array([float(np.linalg.norm(B_full[:, j, :])) for j in range(q)])
     y_pred_full         = ic_full + X_flat_full @ B_full.reshape(-1)
