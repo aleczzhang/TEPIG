@@ -2,6 +2,7 @@
 clussocode/
 CLUSSO_simulation_code/
 zip_files/
+CLUSSO_python/
 
 # Data (not TEPIG-specific, not public data)
 Object_level_data/
@@ -15,6 +16,7 @@ __pycache__/
 outputs/data/
 outputs/summaries/
 outputs/results/
+outputs/figures/
 
 # macOS
 .DS_Store
