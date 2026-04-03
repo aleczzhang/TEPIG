@@ -1,4 +1,7 @@
-## TEPIG - Scalar-on-Tensor Regression with Unbalanced Tensor Predictors
-TEnsor sparse grouP lasso with clusterInG (TEPIG)
+## TEPIG - TEnsor sparse grouP lasso with clusterInG
+Scalar-on-Tensor Regression with Unbalanced Tensor Predictors
+
+Computer-extracted image features (pathomics) of histologic objects in renal biopsy whole-slide images (WSIs) can be viewed as tensor predictors, with pathomic features being measured for each histologic object within each WSI. Although existing scalar-on-tensor regression approaches can predict continuous renal function outcomes from balanced tensors, to our knowledge, none have been designed to handle unbalanced numbers of histologic 2objects per subject while simultaneously providing built-in selection of informative pathomic features. Therefore, we propose the TEnsor sparse grouP lasso with clusterInG (TEPIG) algorithm, a novel scalar-on-tensor regression method that combines unsupervised clustering of histologic objects with sparse group lasso regularization to predict continuous renal function outcomes from pathomic feature tensors. TEPIG jointly clusters histologic objects across all WSIs and subjects into two groups to capture object-level heterogeneity, motivated by diseased vs. non-diseased patterns, and then averages pathomic features within each histologic object cluster for each WSI. The sparse group lasso penalty is used to identify a subset of informative pathomic features. Through simulations of tensor-variate pathomic features and continuous renal function outcomes, we explore TEPIG’s ability to correctly identify the informative pathomic features and its predictive accuracy relative to naïve approaches.
+
 
 
