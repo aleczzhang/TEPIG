@@ -37,13 +37,18 @@ from utils import load_tubule_data, build_naive_average, prune_correlated_featur
 # ── Config ─────────────────────────────────────────────────────────────────────
 _HERE       = os.path.dirname(os.path.abspath(__file__))
 BASE        = os.path.join(_HERE, '..', 'Object_level_data', 'Donors_included_after_biopsy_QCed')
-OUT_DIR     = os.path.join(_HERE, '..', 'outputs')
+_BASE    = os.path.join(_HERE, '..', 'outputs')
+OUT_REF  = os.path.join(_BASE, 'reference')
+OUT_DATA = os.path.join(_BASE, 'data')
+OUT_SUMM = os.path.join(_BASE, 'summaries')
 CORR_THRESH = 0.95   # same pruning threshold as explore_features.py
 DROP_COLS   = ['compartment_id', 'In Medulla']
 G           = 2      # number of clusters (confirmed by professor)
 RANDOM_SEED = 42     # for reproducibility
 
-os.makedirs(OUT_DIR, exist_ok=True)
+os.makedirs(OUT_REF, exist_ok=True)
+os.makedirs(OUT_DATA, exist_ok=True)
+os.makedirs(OUT_SUMM, exist_ok=True)
 
 def get_slide_num(folder_name):
     """
@@ -69,7 +74,7 @@ remaining, _ = prune_correlated_features(X_avg, corr_thresh=CORR_THRESH)
 print(f"  Features remaining after pruning: {len(remaining)}")
 
 # Save the feature list so the simulation script uses the exact same set
-feat_list_path = os.path.join(OUT_DIR, 'remaining_features.txt')
+feat_list_path = os.path.join(OUT_REF, 'remaining_features.txt')
 with open(feat_list_path, 'w') as f:
     for feat in remaining:
         f.write(feat + '\n')
@@ -123,7 +128,7 @@ print(f"  Cluster sizes: "
       f"cluster 2 = {(labels_all==2).sum()} tubules")
 
 # Save the fitted GMM model so it can be reused without re-fitting
-gmm_path = os.path.join(OUT_DIR, 'gmm_model.pkl')
+gmm_path = os.path.join(OUT_DATA, 'gmm_model.pkl')
 with open(gmm_path, 'wb') as f:
     # pickle serialises a Python object to binary so it can be saved and
     # reloaded exactly later.
@@ -203,7 +208,7 @@ for subj, slides in subject_slides.items():
     cluster_results[subj] = subj_result
 
 # ── Step 5: Save cluster results ───────────────────────────────────────────────
-results_path = os.path.join(OUT_DIR, 'cluster_results.pkl')
+results_path = os.path.join(OUT_DATA, 'cluster_results.pkl')
 with open(results_path, 'wb') as f:
     pickle.dump(cluster_results, f)
 print(f"  Saved cluster results: {results_path}")
@@ -213,7 +218,7 @@ n_slides_dist = defaultdict(int)
 for subj, res in cluster_results.items():
     n_slides_dist[res['n_slides']] += 1
 
-summary_path = os.path.join(OUT_DIR, 'gmm_summary.txt')
+summary_path = os.path.join(OUT_SUMM, 'gmm_summary.txt')
 with open(summary_path, 'w') as f:
     f.write("=" * 60 + "\n")
     f.write("GMM CLUSTERING SUMMARY\n")

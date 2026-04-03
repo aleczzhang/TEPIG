@@ -41,7 +41,10 @@ from Mainfunction_albet import Mainfunction_albet, _glmnet_lasso
 from SLasso_MSE import lambda_CV_mse
 
 # ── Config ─────────────────────────────────────────────────────────────────────
-OUT_DIR = os.path.join(os.path.dirname(__file__), '..', 'outputs')
+_BASE    = os.path.join(os.path.dirname(__file__), '..', 'outputs')
+OUT_REF  = os.path.join(_BASE, 'reference')
+OUT_DATA = os.path.join(_BASE, 'data')
+OUT_SUMM = os.path.join(_BASE, 'summaries')
 
 BETA_FEATURES = [
     'Standard Deviation Red Nuclei',
@@ -69,10 +72,10 @@ RANDOM_SEED       = 42
 
 # ── Load pre-computed cluster results ──────────────────────────────────────────
 print("Loading cluster results...")
-with open(os.path.join(OUT_DIR, 'cluster_results.pkl'), 'rb') as f:
+with open(os.path.join(OUT_DATA, 'cluster_results.pkl'), 'rb') as f:
     cluster_results = pickle.load(f)
 
-with open(os.path.join(OUT_DIR, 'remaining_features.txt')) as f:
+with open(os.path.join(OUT_REF, 'remaining_features.txt')) as f:
     features = [line.strip() for line in f]
 
 q = len(features)
@@ -459,7 +462,7 @@ if __name__ == '__main__':
             summary[est]['l1'].append(l1)
             summary[est]['mse'].append(mse)
 
-    results_path = os.path.join(OUT_DIR, 'simulation_bootstrap_results.pkl')
+    results_path = os.path.join(OUT_DATA, 'simulation_bootstrap_results.pkl')
     with open(results_path, 'wb') as f:
         pickle.dump({
             'summary': summary,
@@ -472,7 +475,7 @@ if __name__ == '__main__':
             }
         }, f)
 
-    summary_path = os.path.join(OUT_DIR, 'simulation_bootstrap_summary.txt')
+    summary_path = os.path.join(OUT_SUMM, 'simulation_bootstrap_summary.txt')
     with open(summary_path, 'w') as f:
         f.write("=" * 70 + "\n")
         f.write("TEPIG BOOTSTRAP SIMULATION SUMMARY\n")

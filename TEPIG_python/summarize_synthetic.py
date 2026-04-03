@@ -11,7 +11,9 @@ import os
 import pickle
 import numpy as np
 
-OUT_DIR = os.path.join(os.path.dirname(__file__), '..', 'outputs')
+_BASE    = os.path.join(os.path.dirname(__file__), '..', 'outputs')
+OUT_DATA = os.path.join(_BASE, 'data')
+OUT_SUMM = os.path.join(_BASE, 'summaries')
 
 N_VALUES    = [300, 500, 700, 900, 1100, 1500, 2000]
 Q_VALUES    = [10, 50, 100, 150, 200]
@@ -25,7 +27,7 @@ for sparsity in S_VALUES:
     sparsity_str = f"{int(sparsity * 10):02d}"
     for q in Q_VALUES:
         for n in N_VALUES:
-            pkl_path = os.path.join(OUT_DIR,
+            pkl_path = os.path.join(OUT_DATA,
                 f'simulation_synthetic_n{n}_q{q}_s{sparsity_str}_results.pkl')
             if not os.path.exists(pkl_path):
                 missing.append(f"n={n}, q={q}, sparsity={sparsity}")
@@ -77,7 +79,7 @@ lines.append("=" * len(header))
 output = "\n".join(lines)
 print(output)
 
-out_path = os.path.join(OUT_DIR, 'simulation_synthetic_summary_all.txt')
+out_path = os.path.join(OUT_SUMM, 'simulation_synthetic_summary_all.txt')
 with open(out_path, 'w') as f:
     f.write(output + "\n")
 print(f"\nSaved to {out_path}")

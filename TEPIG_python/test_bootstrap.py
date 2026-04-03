@@ -23,7 +23,10 @@ from Mainfunction_albet import Mainfunction_albet, _glmnet_lasso
 from SLasso_MSE import lambda_CV_mse
 
 # ── Same config as simulation_bootstrap.py ────────────────────────────────────
-OUT_DIR = os.path.join(os.path.dirname(__file__), '..', 'outputs')
+_BASE    = os.path.join(os.path.dirname(__file__), '..', 'outputs')
+OUT_REF  = os.path.join(_BASE, 'reference')
+OUT_DATA = os.path.join(_BASE, 'data')
+OUT_SUMM = os.path.join(_BASE, 'results')
 
 BETA_FEATURES = [
     'Standard Deviation Red Nuclei',
@@ -43,9 +46,9 @@ TOL               = 1e-2
 
 # ── Load data ─────────────────────────────────────────────────────────────────
 print("Loading data...")
-with open(os.path.join(OUT_DIR, 'cluster_results.pkl'), 'rb') as f:
+with open(os.path.join(OUT_DATA, 'cluster_results.pkl'), 'rb') as f:
     cluster_results = pickle.load(f)
-with open(os.path.join(OUT_DIR, 'remaining_features.txt')) as f:
+with open(os.path.join(OUT_REF, 'remaining_features.txt')) as f:
     features = [line.strip() for line in f]
 
 q, G, S = len(features), 2, 2
@@ -305,7 +308,7 @@ tpr, fpr, l1, mse = compute_metrics(beta_hat_oracle, y, y_pred_oracle)
 out_lines.append(f"oracle:      TPR={tpr:.3f}  FPR={fpr:.3f}  L1={l1:.3f}  MSE={mse:.3f}")
 
 # ── Write output ──────────────────────────────────────────────────────────────
-out_path = os.path.join(OUT_DIR, 'test_bootstrap_output.txt')
+out_path = os.path.join(OUT_SUMM, 'test_bootstrap_output.txt')
 with open(out_path, 'w') as f:
     f.write('\n'.join(out_lines) + '\n')
 print('\n'.join(out_lines))

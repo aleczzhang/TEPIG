@@ -30,10 +30,13 @@ CORR_THRESH = 0.95   # greedily remove one feature from each pair above this
 CAND_THRESH = 0.80   # candidate beta_star features: max |corr| with any other < this
 N_TOP       = 10     # show pairwise correlations among the N most independent features
 DROP_COLS   = ['compartment_id', 'In Medulla']
-OUT_DIR     = os.path.join(_HERE, '..', 'outputs')
+_BASE    = os.path.join(_HERE, '..', 'outputs')
+OUT_REF  = os.path.join(_BASE, 'reference')
+OUT_SUMM = os.path.join(_BASE, 'summaries')
 
 # ── Setup output directory ─────────────────────────────────────────────────────
-os.makedirs(OUT_DIR, exist_ok=True)
+os.makedirs(OUT_REF, exist_ok=True)
+os.makedirs(OUT_SUMM, exist_ok=True)
 
 # ── Load all tubule data and compute naive average per subject ─────────────────
 print("Loading tubule data from all included donors...")
@@ -71,7 +74,7 @@ ax.set_title(
     fontsize=12
 )
 plt.tight_layout()
-heatmap_path = os.path.join(OUT_DIR, 'correlation_heatmap.png')
+heatmap_path = os.path.join(OUT_REF, 'correlation_heatmap.png')
 plt.savefig(heatmap_path, dpi=150)
 plt.close()
 
@@ -94,7 +97,7 @@ top_n_feats = max_corr_with_others.sort_values().head(N_TOP).index.tolist()
 top_corr    = corr_mat.loc[top_n_feats, top_n_feats]
 
 # ── Write all results to a text file ──────────────────────────────────────────
-results_path = os.path.join(OUT_DIR, 'feature_selection_results.txt')
+results_path = os.path.join(OUT_SUMM, 'feature_selection_results.txt')
 with open(results_path, 'w') as f:
 
     f.write("=" * 80 + "\n")
@@ -139,7 +142,7 @@ with open(results_path, 'w') as f:
     f.write(top_corr.round(3).to_string() + "\n")
 
 # Also save the full correlation matrix as CSV for inspection
-corr_csv_path = os.path.join(OUT_DIR, 'correlation_matrix.csv')
+corr_csv_path = os.path.join(OUT_REF, 'correlation_matrix.csv')
 corr_mat.round(4).to_csv(corr_csv_path)
 
 print(f"Saved: {heatmap_path}")

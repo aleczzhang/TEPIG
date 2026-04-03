@@ -10,11 +10,14 @@ warnings.filterwarnings('ignore')  # suppress overflow/NaN warnings from near-ze
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'CLUSSO_python'))
 
 # ── Load data (same setup as simulation.py) ────────────────────────────────
-OUT_DIR = os.path.join(os.path.dirname(__file__), '..', 'outputs')
+_BASE    = os.path.join(os.path.dirname(__file__), '..', 'outputs')
+OUT_REF  = os.path.join(_BASE, 'reference')
+OUT_DATA = os.path.join(_BASE, 'data')
+OUT_SUMM = os.path.join(_BASE, 'results')
 
-with open(os.path.join(OUT_DIR, 'cluster_results.pkl'), 'rb') as f:
+with open(os.path.join(OUT_DATA, 'cluster_results.pkl'), 'rb') as f:
     cluster_results = pickle.load(f)
-with open(os.path.join(OUT_DIR, 'remaining_features.txt')) as f:
+with open(os.path.join(OUT_REF, 'remaining_features.txt')) as f:
     features = [line.strip() for line in f]
 
 subjects = sorted(cluster_results.keys())
@@ -134,7 +137,7 @@ out_lines.append(f"TPR: {tpr_cv:.3f}  FPR: {fpr_cv:.3f}  n_selected: {len(sel_cv
 out_lines.append(f"Selected: {[features[i] for i in sel_cv]}")
 
 # ── Write output ───────────────────────────────────────────────────────────
-out_path = os.path.join(OUT_DIR, 'test_proxgrad_output.txt')
+out_path = os.path.join(OUT_SUMM, 'test_proxgrad_output.txt')
 with open(out_path, 'w') as f:
     f.write('\n'.join(out_lines) + '\n')
 print('\n'.join(out_lines))

@@ -46,7 +46,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'CLUSSO_python'
 from Mainfunction_albet import Mainfunction_albet, _glmnet_lasso
 from SLasso_MSE import lambda_CV_mse
 
-OUT_DIR = os.path.join(os.path.dirname(__file__), '..', 'outputs')
+_BASE    = os.path.join(os.path.dirname(__file__), '..', 'outputs')
+OUT_DATA = os.path.join(_BASE, 'data')
+OUT_SUMM = os.path.join(_BASE, 'results')
+os.makedirs(OUT_DATA, exist_ok=True)
+os.makedirs(OUT_SUMM, exist_ok=True)
 
 # ── Parse args ─────────────────────────────────────────────────────────────────
 parser = argparse.ArgumentParser()
@@ -444,7 +448,7 @@ if __name__ == '__main__':
             summary[est]['mse'].append(mse)
 
     # Save pickle
-    pkl_path = os.path.join(OUT_DIR,
+    pkl_path = os.path.join(OUT_DATA,
         f'simulation_synthetic_n{N}_q{Q}_s{sparsity_str}_results.pkl')
     with open(pkl_path, 'wb') as f:
         pickle.dump({
@@ -459,7 +463,7 @@ if __name__ == '__main__':
         }, f)
 
     # Save summary text
-    txt_path = os.path.join(OUT_DIR,
+    txt_path = os.path.join(OUT_SUMM,
         f'simulation_synthetic_n{N}_q{Q}_s{sparsity_str}_summary.txt')
     with open(txt_path, 'w') as f:
         f.write("=" * 65 + "\n")
