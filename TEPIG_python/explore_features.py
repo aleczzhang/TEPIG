@@ -12,10 +12,10 @@ Use Donors_included_after_biopsy_QCed, excluded folder has biopsis that failed
 quality control (eg. poor tissue quality, imaging artifacts, etc.). Excluded them
 because would cause distortion in feature correlation structure.
 
-Drop compartment_id, row identifier assigned by the image analysis software, not a biological measurement
-Need to drop In Medulla?
-In Medulla: binary flag marking whether a tubule is in the kidney medulla
-vs cortex -- anatomical metadata, not a pathomic feature.
+Drop compartment_id: row identifier assigned by the image analysis software, not a biological measurement.
+In Medulla: used to filter to cortical tubules only (In Medulla == 0) before dropping — matches
+professor's CT_GRANULAR averaging which uses cortical tubules only. Verified: cortex-only averages
+match Renal_Data.csv within 0.5%; all-tubule averages differ by ~8.6%.
 """
 
 import os

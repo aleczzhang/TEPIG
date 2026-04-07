@@ -44,9 +44,13 @@ def load_tubule_data(base, drop_cols=None):
     For each slide folder inside `base` that contains a
     'final_combined_features_tubules.xlsx' file, this function:
       1. Reads the Excel file into a DataFrame (one row = one tubule)
-      2. Drops any columns listed in `drop_cols`
-      3. Stores the result keyed by slide folder name
-      4. Groups slides by subject for computing per-subject averages
+      2. Filters to cortical tubules only (In Medulla == 0), matching the
+         professor's Renal_Data.csv which averaged cortical tubules only
+         (CT_GRANULAR = Cortical Tubules). Verified: cortex-only averages
+         match Renal_Data.csv within 0.5%; all-tubule averages differ by ~8.6%.
+      3. Drops any columns listed in `drop_cols`
+      4. Stores the result keyed by slide folder name
+      5. Groups slides by subject for computing per-subject averages
 
     Parameters
     ----------
@@ -75,9 +79,11 @@ def load_tubule_data(base, drop_cols=None):
     for d in slide_dirs:
         fpath = os.path.join(base, d, 'final_combined_features_tubules.xlsx')
         if os.path.exists(fpath):
-            # pd.read_excel reads an Excel file into a DataFrame.
-            # engine='openpyxl' specifies the library used to parse .xlsx files.
             df = pd.read_excel(fpath, engine='openpyxl')
+            # Keep only cortical tubules (In Medulla == 0) before dropping the
+            # column — this matches the professor's CT_GRANULAR averaging.
+            if 'In Medulla' in df.columns:
+                df = df[df['In Medulla'] == 0]
             df = df.drop(columns=[c for c in drop_cols if c in df.columns])
             slide_data[d] = df
             subject_dfs[get_subject(d)].append(df)
