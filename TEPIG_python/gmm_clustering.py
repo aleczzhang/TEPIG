@@ -1,7 +1,10 @@
 """
-Step 2 of TEPIG simulation setup:
-  - Load all tubule-level data from included donors
-  - Drop highly correlated features using same greedy pruning as explore_features.py
+Step 2 of TEPIG pipeline:
+  - Load all tubule-level data from included donors (cortical tubules only)
+  - Drop metadata columns (compartment_id, In Medulla)
+  - Find the highest correlation threshold (trying 0.99, 0.95, 0.90, 0.85, ...)
+    such that after greedily removing one feature from each pair at or above
+    that threshold, the GMM fits and converges stably
   - Pool all tubules across all subjects and slides into one matrix
   - Fit a 2-component Gaussian Mixture Model (GMM) on the pooled tubules
   - Assign every tubule a cluster label (1 or 2)
@@ -9,7 +12,7 @@ Step 2 of TEPIG simulation setup:
       * Cluster proportions (weights w1, w2 = 1 - w1)
       * Mean feature vector per cluster (unweighted average)
       * Weighted cluster average: row g = w_g * mean(features in cluster g)
-  - Save results to outputs/ for use by the simulation script
+  - Save results to outputs/ for use by real data analysis and simulation scripts
 
 Why pool all tubules before clustering?
   GMM is fit on all tubules from all subjects at once so the cluster definitions
@@ -23,7 +26,7 @@ Why G=2 clusters?
 Outputs saved to outputs/ (relative to repo root):
   - gmm_model.pkl            : the fitted GaussianMixture object
   - cluster_results.pkl      : per-subject, per-slide clustering results and tensors
-  - remaining_features.txt   : the 53 features kept after correlation pruning
+  - remaining_features.txt   : features kept after correlation pruning
   - gmm_summary.txt          : human-readable summary of clustering results
 """
 
@@ -41,8 +44,8 @@ _BASE    = os.path.join(_HERE, '..', 'outputs')
 OUT_REF  = os.path.join(_BASE, 'reference')
 OUT_DATA = os.path.join(_BASE, 'data')
 OUT_SUMM = os.path.join(_BASE, 'summaries')
-CORR_THRESH = 0.95   # same pruning threshold as explore_features.py
-DROP_COLS   = ['compartment_id', 'In Medulla']
+DROP_COLS      = ['compartment_id', 'In Medulla']  # metadata; In Medulla used for cortex filter first, then dropped
+CORR_THRESHOLDS = [0.99, 0.95, 0.90, 0.85, 0.80, 0.75, 0.70]  # tried in order; stop at first stable GMM
 G           = 2      # number of clusters (confirmed by professor)
 RANDOM_SEED = 42     # for reproducibility
 
@@ -67,22 +70,64 @@ for d, df in slide_data.items():
 print(f"\n  Total slides: {len(slide_data)}")
 print(f"  Total subjects: {len(subject_dfs)}")
 
-# ── Step 2: Greedy correlation pruning (same as explore_features.py) ──────────
-print(f"\nPruning features with |corr| > {CORR_THRESH}...")
+# ── Step 2: Find highest correlation threshold for stable GMM ─────────────────
+# Professor's guidance: try thresholds from highest (least aggressive) to lowest,
+# stopping at the first threshold where GMM converges stably.
+# For each threshold: greedily remove one feature from each pair with |corr| at
+# or above the threshold, then attempt to fit the GMM on the pruned feature set.
 X_avg = build_naive_average(subject_dfs)
-remaining, _ = prune_correlated_features(X_avg, corr_thresh=CORR_THRESH)
-print(f"  Features remaining after pruning: {len(remaining)}")
+print(f"\n  Features before pruning: {X_avg.shape[1]}")
 
-# Save the feature list so the simulation script uses the exact same set
+remaining    = None
+dropped      = None
+corr_thresh  = None
+
+for thresh in CORR_THRESHOLDS:
+    cand_remaining, cand_dropped = prune_correlated_features(X_avg, corr_thresh=thresh)
+
+    # Stack all tubule rows using this candidate feature set and try fitting GMM
+    cand_rows = []
+    for d, df in slide_data.items():
+        cand_rows.append(df[cand_remaining].values)
+    X_cand = np.vstack(cand_rows)
+
+    gmm_test = GaussianMixture(
+        n_components=G,
+        covariance_type='full',
+        n_init=10,
+        max_iter=1000,
+        random_state=RANDOM_SEED
+    )
+    try:
+        gmm_test.fit(X_cand)
+        converged = gmm_test.converged_
+    except Exception:
+        converged = False
+
+    print(f"  thresh={thresh:.2f}: {len(cand_remaining)} features, "
+          f"GMM converged={converged}")
+
+    if converged:
+        remaining   = cand_remaining
+        dropped     = cand_dropped
+        corr_thresh = thresh
+        break
+
+if remaining is None:
+    raise RuntimeError("GMM did not converge at any correlation threshold. "
+                       "Consider adding lower thresholds to CORR_THRESHOLDS.")
+
+print(f"\n  Selected threshold : {corr_thresh}")
+print(f"  Features remaining : {len(remaining)}")
+print(f"  Features dropped   : {len(dropped)}")
+print(f"  Dropped: {dropped}")
+
+# Save the feature list so downstream scripts use the exact same set
 feat_list_path = os.path.join(OUT_REF, 'remaining_features.txt')
 with open(feat_list_path, 'w') as f:
     for feat in remaining:
         f.write(feat + '\n')
 print(f"  Saved feature list: {feat_list_path}")
-
-# Apply pruning to all slides
-for d in slide_data:
-    slide_data[d] = slide_data[d][remaining]
 
 # ── Step 3: Pool all tubules and fit GMM ───────────────────────────────────────
 # Stack all tubule rows from all slides into one large matrix.
@@ -93,7 +138,7 @@ all_rows    = []   # list of feature arrays
 slide_index = []   # parallel list: which slide_dir each row belongs to
 
 for d, df in slide_data.items():
-    all_rows.append(df.values)
+    all_rows.append(df[remaining].values)
     slide_index.extend([d] * len(df))
 
 # np.vstack stacks a list of 2D arrays vertically (row-wise).
@@ -101,15 +146,10 @@ X_all       = np.vstack(all_rows)
 slide_index = np.array(slide_index)
 print(f"  Pooled matrix shape: {X_all.shape}  (tubules x features)")
 
-print(f"\nFitting GMM with G={G} components...")
-# GaussianMixture fits a mixture of G multivariate Gaussian distributions via
-# the Expectation-Maximisation (EM) algorithm.
-# covariance_type='full': each cluster gets its own full covariance matrix
-#   (most flexible; matches R's Mclust default).
-# n_init=10: run EM from 10 different random starting points and keep the best
-#   result (guards against converging to a poor local optimum).
-# max_iter=1000: maximum number of EM iterations per initialisation.
-# random_state: seeds the random number generator for reproducibility.
+# The GMM was already fit during the threshold search; re-fit here on the full
+# pooled matrix with the selected feature set for the definitive model.
+print(f"\nFitting final GMM with G={G} components "
+      f"(corr_thresh={corr_thresh}, {len(remaining)} features)...")
 gmm = GaussianMixture(
     n_components=G,
     covariance_type='full',
@@ -164,9 +204,9 @@ for subj, slides in subject_slides.items():
 
     for d in slides:
         # Find which rows in X_all belong to this slide
-        slide_mask  = slide_index == d
+        slide_mask   = slide_index == d
         slide_labels = labels_all[slide_mask]
-        slide_feats  = X_all[slide_mask]
+        slide_feats  = X_all[slide_mask]   # already restricted to remaining features
         n_tubules    = slide_feats.shape[0]
 
         # Cluster proportions: fraction of tubules in each cluster
@@ -181,7 +221,7 @@ for subj, slides in subject_slides.items():
         # Weighted cluster average: scale each cluster's mean by its proportion.
         # This is the X_i representation used in CLUSSO / TEPIG:
         # row g of X_i = w_g * mean(features in cluster g)
-        # Shape: (G, q) = (2, 53)
+        # Shape: (G, q) where q = len(remaining)
         cluster_avg  = np.vstack([mean1,      mean2     ])   # unweighted (G, q)
         weighted_avg = np.vstack([w1 * mean1, w2 * mean2])   # weighted   (G, q)
 
@@ -226,7 +266,9 @@ with open(summary_path, 'w') as f:
     f.write(f"Total subjects        : {len(cluster_results)}\n")
     f.write(f"Total slides          : {len(slide_data)}\n")
     f.write(f"Total tubules         : {len(X_all)}\n")
-    f.write(f"Features after pruning: {len(remaining)}\n")
+    f.write(f"Corr threshold (selected)   : {corr_thresh}\n")
+    f.write(f"Features after pruning      : {len(remaining)}\n")
+    f.write(f"Features dropped            : {len(dropped)}\n")
     f.write(f"GMM components (G)    : {G}\n")
     f.write(f"GMM converged         : {gmm.converged_}\n\n")
     f.write(f"Cluster sizes (all tubules pooled):\n")
@@ -237,8 +279,8 @@ with open(summary_path, 'w') as f:
     f.write(f"Slides per subject:\n")
     for n, count in sorted(n_slides_dist.items()):
         f.write(f"  {n} slide(s): {count} subjects\n")
-    f.write(f"\nNote: subjects with 1 slide will get a noisy copy\n")
-    f.write(f"for slide 2 in the simulation (noise level TBD by professor).\n\n")
+    f.write(f"\nNote: subjects with 1 slide get a noisy copy as slide 2 "
+            f"(Gaussian noise, std=1.0, confirmed by professor).\n\n")
     f.write("Per-subject tensor shapes (G x q x S):\n")
     for subj, res in sorted(cluster_results.items()):
         f.write(f"  {subj}: {res['X_tensor'].shape}\n")

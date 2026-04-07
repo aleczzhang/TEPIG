@@ -6,6 +6,7 @@ Contrast Nuclei
 Correlation Eosinophilic
 Correlation Luminal Space
 Correlation Nuclei
+Energy Luminal Space
 Energy Nuclei
 Eosinophilic Area
 Homogeneity Eosinophilic
@@ -14,26 +15,35 @@ Homogeneity Nuclei
 Luminal Fraction
 Luminal Space Area
 Major Axis Length
+Max Distance Transform By Nuclei Area
+Max Distance Transform By Object Area Eosinophilic
+Max Distance Transform By Object Area Luminal Space
 Max Distance Transform By Object Area Nuclei
+Max Distance Transform Eosinophilic
 Max Distance Transform Luminal Space
 Max Distance Transform Nuclei
 Mean Aspect Ratio Nuclei
 Mean Blue Eosinophilic
 Mean Blue Luminal Space
+Mean Blue Nuclei
 Mean Distance Transform By Eosinophilic Area
 Mean Distance Transform By Luminal Space Area
+Mean Distance Transform By Nuclei Area
 Mean Distance Transform By Object Area Eosinophilic
 Mean Distance Transform By Object Area Luminal Space
 Mean Distance Transform By Object Area Nuclei
 Mean Green Eosinophilic
 Mean Green Luminal Space
+Mean Green Nuclei
 Mean Nuclear Area
 Mean Red Eosinophilic
 Mean Red Luminal Space
+Mean Red Nuclei
 Nuclei Area By Object Area
 Nuclei Number
 Radius (pixel)
 Standard Deviation Aspect Ratio Nuclei
+Standard Deviation Blue Eosinophilic
 Standard Deviation Blue Luminal Space
 Standard Deviation Blue Nuclei
 Standard Deviation Green Eosinophilic
@@ -51,3 +61,4 @@ Sum Distance Transform Luminal Space
 Sum Distance Transform Nuclei
 Total Object Area
 Total Object Aspect Ratio
+Total Object Perimeter
