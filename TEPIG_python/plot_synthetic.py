@@ -103,7 +103,7 @@ for metric_key, metric_label, use_log in METRICS:
             if use_log:
                 ax.set_yscale('log')
 
-            ax.set_title(f'q = {q}, $s_0$ = {sparsity}', fontsize=8.5)
+            ax.set_title(f'q = {q}, $\\mathrm{{s}}_{{\\beta^*}}$ = {sparsity}', fontsize=8.5)
             ax.set_xlabel('n', fontsize=8)
             ax.set_ylabel(metric_label, fontsize=8)
             ax.tick_params(labelsize=7)
