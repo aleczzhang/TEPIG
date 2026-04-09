@@ -44,7 +44,19 @@ _BASE    = os.path.join(_HERE, '..', 'outputs')
 OUT_REF  = os.path.join(_BASE, 'reference')
 OUT_DATA = os.path.join(_BASE, 'data')
 OUT_SUMM = os.path.join(_BASE, 'summaries')
-DROP_COLS      = ['compartment_id', 'In Medulla']  # metadata; In Medulla used for cortex filter first, then dropped
+DROP_COLS      = [
+    'compartment_id', 'In Medulla',   # metadata; In Medulla used for cortex filter first, then dropped
+    # 18 RGB color channel features — absent from professor's CT_GRANULAR block in Renal_Data.csv;
+    # likely dropped due to stain/scanner batch effects and redundancy with GLCM texture features
+    'Mean Red Nuclei', 'Mean Green Nuclei', 'Mean Blue Nuclei',
+    'Standard Deviation Red Nuclei', 'Standard Deviation Green Nuclei', 'Standard Deviation Blue Nuclei',
+    'Mean Red Eosinophilic', 'Mean Green Eosinophilic', 'Mean Blue Eosinophilic',
+    'Standard Deviation Red Eosinophilic', 'Standard Deviation Green Eosinophilic', 'Standard Deviation Blue Eosinophilic',
+    'Mean Red Luminal Space', 'Mean Green Luminal Space', 'Mean Blue Luminal Space',
+    'Standard Deviation Red Luminal Space', 'Standard Deviation Green Luminal Space', 'Standard Deviation Blue Luminal Space',
+    # 3 morphometric features — in Renal_Data.csv only as slide-level summaries, not per-tubule granular features
+    'Average TBM Thickness', 'Average Cell Thickness', 'Luminal Fraction',
+]
 CORR_THRESHOLDS = [0.99, 0.95, 0.90, 0.85, 0.80, 0.75, 0.70]  # tried in order; stop at first stable GMM
 G           = 2      # number of clusters (confirmed by professor)
 RANDOM_SEED = 42     # for reproducibility
