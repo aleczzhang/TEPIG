@@ -30,10 +30,10 @@ Q_VALUES = [10, 50, 100, 150, 200]
 S_VALUES = [0.4, 0.8]
 
 ESTIMATORS = [
-    ('tepig_grad', 'TEPIG',   'steelblue',      '-',   'o', 5),
-    ('clusso',     'CLUSSO',  'mediumseagreen', '-',   's', 5),
-    ('naive',      'Naive',   'darkorange',     '--',  '^', 5),
-    ('oracle',     'Oracle',  'mediumpurple',   '-.',  'D', 5),
+    ('tepig',  'TEPIG',   'steelblue',      '-',   'o', 5),
+    ('clusso', 'CLUSSO',  'mediumseagreen', '-',   's', 5),
+    ('naive',  'Naive',   'darkorange',     '--',  '^', 5),
+    ('oracle', 'Oracle',  'mediumpurple',   '-.',  'D', 5),
 ]
 
 METRICS = [
