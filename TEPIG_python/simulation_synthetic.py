@@ -47,7 +47,7 @@ from Mainfunction_albet import Mainfunction_albet, _glmnet_lasso
 from SLasso_MSE import lambda_CV_mse
 
 _BASE    = os.path.join(os.path.dirname(__file__), '..', 'outputs')
-OUT_DATA = os.path.join(_BASE, 'data')
+OUT_DATA = os.path.join(_BASE, 'data', 'after_avg')
 OUT_SUMM = os.path.join(_BASE, 'results')
 os.makedirs(OUT_DATA, exist_ok=True)
 os.makedirs(OUT_SUMM, exist_ok=True)

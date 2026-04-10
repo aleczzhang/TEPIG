@@ -12,7 +12,7 @@ import pickle
 import numpy as np
 
 _BASE    = os.path.join(os.path.dirname(__file__), '..', 'outputs')
-OUT_DATA = os.path.join(_BASE, 'data')
+OUT_DATA = os.path.join(_BASE, 'data', 'after_avg')
 OUT_SUMM = os.path.join(_BASE, 'summaries')
 
 N_VALUES    = [300, 500, 700, 900, 1100, 1500, 2000]

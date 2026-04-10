@@ -21,7 +21,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 _BASE    = os.path.join(os.path.dirname(__file__), '..', 'outputs')
-OUT_DATA = os.path.join(_BASE, 'data')
+OUT_DATA = os.path.join(_BASE, 'data', 'after_avg')
 OUT_FIG  = os.path.join(_BASE, 'figures')
 os.makedirs(OUT_FIG, exist_ok=True)
 
