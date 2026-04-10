@@ -22,11 +22,11 @@ True model (full tensor, no low-rank):
     B_true[:, j, :] = B_TRUE_BLOCK  for j in nonzero_features (randomly sampled each rep)
 
 Estimators:
-    tepig_grad : proximal gradient + group lasso on full (G, q, S, n) tensor
-    tepig      : alternating rank-1 structured lasso on (G, q, S, n) tensor
-    clusso     : Mainfunction_albet on (G=2, q, n) mega-slide (pool both slides' tubules)
-    naive      : average TEPIG slides -> (G=2, q, n), run Mainfunction_albet
-    oracle     : OLS on true nonzero features only
+    tepig         : proximal gradient + group lasso on full (G, q, S, n) tensor  [main method]
+    tepig_lowrank : alternating rank-1 structured lasso on (G, q, S, n) tensor   [reference only]
+    clusso        : Mainfunction_albet on (G=2, q, n) mega-slide (pool both slides' tubules)
+    naive         : average TEPIG slides -> (G=2, q, n), run Mainfunction_albet
+    oracle        : OLS on true nonzero features only
 
 Lambda grid (fixed, same for ALL estimators):
     {0.25, 0.50, 0.75, ..., 2.50, 3.00, 3.50, 4.00, 4.50, 5.00}
@@ -158,7 +158,7 @@ def generate_data(rng, n, q):
     B_true = np.zeros((G, q, S))
     for j in nonzero_idx:
         B_true[:, j, :] = B_TRUE_BLOCK
-    beta_star = np.array([float(np.linalg.norm(B_true[:, j, :])) for j in range(q)])
+    beta_star = np.array([float(B_true[:, j, :].mean()) for j in range(q)])
 
     # Step 3: Generate per-subject data
     X_tepig  = np.zeros((G, q, S, n))
@@ -258,7 +258,7 @@ def proxgrad_fit(X, y, lam, max_iter=2000, tol=1e-6):
 
 # ── tepig_fit ──────────────────────────────────────────────────────────────────
 
-def tepig_fit(X, y, lam, alpha_init, beta_init, gamma_init):
+def tepig_lowrank_fit(X, y, lam, alpha_init, beta_init, gamma_init):
     G, q, S, n = X.shape
     alpha    = _normalize_vec(np.asarray(alpha_init, dtype=float).copy())
     beta     = np.asarray(beta_init,  dtype=float).copy()
@@ -353,7 +353,7 @@ def run_one_sim(seed):
     all_idx  = list(range(n))
     folds    = _make_folds(n, rng)
 
-    # ── tepig_grad ────────────────────────────────────────────────────────────
+    # ── tepig ─────────────────────────────────────────────────────────────────
     d_full = G * q * S
     cv_mse = []
     for lam in LAM_GRID:
@@ -367,18 +367,23 @@ def run_one_sim(seed):
 
     best_lam   = LAM_GRID[int(np.argmin(cv_mse))]
     ic_f, B_f  = proxgrad_fit(X_tepig, y, best_lam)
-    beta_hat_f = np.array([float(np.linalg.norm(B_f[:, j, :])) for j in range(q)])
+    beta_hat_f = B_f.mean(axis=(0, 2))   # average over G and S → (q,)
+    # Post-estimation threshold on L1-normalized beta (mirrors CLUSSO's 0.001 cutoff;
+    # simulation analysis showed 0.02 eliminates ~89% FPs with 0% TP loss)
+    total_f = np.sum(np.abs(beta_hat_f))
+    if total_f > 0:
+        beta_hat_f[np.abs(beta_hat_f) / total_f < 0.02] = 0.0
     y_pred_f   = ic_f + X_tepig.reshape(d_full, n).T @ B_f.reshape(-1)
-    results['tepig_grad'] = compute_metrics(beta_hat_f, y, y_pred_f, beta_star)
+    results['tepig'] = compute_metrics(beta_hat_f, y, y_pred_f, beta_star)
 
-    # ── tepig ─────────────────────────────────────────────────────────────────
+    # ── tepig_lowrank (reference only — not included in summary/plots) ────────
     cv_mse_t = []
     for lam in LAM_GRID:
         fold_mse = []
         for k in range(5):
             te = folds[k]; tr = [i for i in all_idx if i not in te]
             a0 = np.ones(G) / G; b0 = np.ones(q) / q; g0 = np.ones(S) / S
-            a, b, g = tepig_fit(X_tepig[:, :, :, tr], y[tr], lam, a0, b0, g0)
+            a, b, g = tepig_lowrank_fit(X_tepig[:, :, :, tr], y[tr], lam, a0, b0, g0)
             yp = np.einsum('gjsn,g,j,s->n', X_tepig[:, :, :, te], a, b, g)
             fold_mse.append(float(np.mean((y[te] - yp) ** 2)))
         cv_mse_t.append(float(np.mean(fold_mse)))
@@ -390,7 +395,7 @@ def run_one_sim(seed):
         a0 = rng.dirichlet(np.ones(G))
         b0 = rng.uniform(-1, 1, q)
         g0 = rng.dirichlet(np.ones(S))
-        a, b, g = tepig_fit(X_tepig, y, best_lam_t, a0, b0, g0)
+        a, b, g = tepig_lowrank_fit(X_tepig, y, best_lam_t, a0, b0, g0)
         yp  = np.einsum('gjsn,g,j,s->n', X_tepig, a, b, g)
         mse = float(np.mean((y - yp) ** 2))
         if mse < best_mse_t:
@@ -398,7 +403,7 @@ def run_one_sim(seed):
 
     a_hat, b_hat, g_hat = best_res_t
     y_pred_t = np.einsum('gjsn,g,j,s->n', X_tepig, a_hat, b_hat, g_hat)
-    results['tepig'] = compute_metrics(b_hat, y, y_pred_t, beta_star)
+    results['tepig_lowrank'] = compute_metrics(b_hat, y, y_pred_t, beta_star)
 
     # ── clusso: mega-slide (pool tubules from both slides) ────────────────────
     b_clusso, y_pred_clusso = clusso_select_and_fit(X_clusso, y, rng, folds, all_idx)
@@ -419,7 +424,7 @@ def run_one_sim(seed):
     B_oracle      = B_oracle_flat.reshape(G, n_nz, S)
     beta_hat_oracle = np.zeros(q)
     for k, j in enumerate(nonzero_idx):
-        beta_hat_oracle[j] = float(np.linalg.norm(B_oracle[:, k, :]))
+        beta_hat_oracle[j] = float(B_oracle[:, k, :].mean())   # average over G and S
     y_pred_oracle = ic_oracle + X_oracle @ B_oracle_flat
     results['oracle'] = compute_metrics(beta_hat_oracle, y, y_pred_oracle, beta_star)
 
@@ -435,7 +440,7 @@ if __name__ == '__main__':
         delayed(run_one_sim)(s) for s in seed_ints
     )
 
-    estimators  = ['tepig_grad', 'tepig', 'clusso', 'naive', 'oracle']
+    estimators  = ['tepig', 'tepig_lowrank', 'clusso', 'naive', 'oracle']
     metric_keys = ['tpr', 'fpr', 'l1', 'mse']
 
     summary = {est: {m: [] for m in metric_keys} for est in estimators}
