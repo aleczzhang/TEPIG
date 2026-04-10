@@ -1,31 +1,28 @@
 """
 real_data_analysis.py
 ---------------------
-Apply TEPIG, CLUSSO, naive, and oracle estimators to the real Coimbra
-kidney transplant data.
+Apply TEPIG, CLUSSO, and naive estimators to bootstrapped Coimbra data.
 
-Only subjects with 2 real biopsy slides are used (confirmed by professor).
+Only subjects with 2 real biopsy slides are used (professor requirement).
+Subjects are resampled with replacement (bootstrapping) to N_BOOTSTRAP=300,
+matching the smallest simulation sample size where estimators perform reasonably
+for q≈50 (closest simulation q to real data q=43).
+
+No train/test split. Lambda selected by 5-fold CV on the full bootstrapped
+dataset. In-sample MSE reported on all N_BOOTSTRAP subjects.
+
+TEPIG beta: mean of (G, S) block per feature → (q,) vector → L1-normalized
+for feature importance reporting (comparable to CLUSSO/naive's (q,) beta).
+Oracle not included — only meaningful in simulation with known true coefficients.
 
 Inputs:
-  - outputs/data/cluster_results.pkl          : per-subject GMM cluster tensors
-  - outputs/reference/remaining_features.txt  : feature names after pruning
-  - Object_level_data/.../coimbra_clinical_outcomes.csv : outcome data
+  - outputs/data/cluster_results.pkl
+  - outputs/reference/remaining_features.txt
+  - Object_level_data/.../coimbra_clinical_outcomes.csv
 
-Outcome: eGFR_CKD_EPI_12M (1-year eGFR via CKD-EPI formula)
-
-Estimators:
-  TEPIG  : proximal gradient + group lasso on full (G, q, S, n) tensor
-  clusso : Mainfunction_albet on mega-slide (G, q, n) — tubules pooled
-           across both slides per cluster
-  naive  : Mainfunction_albet on slide-averaged (G, q, n) matrix
-  oracle : OLS on features selected by TEPIG (post-selection, no penalty)
-           — not a true oracle (no ground truth), but removes lasso bias
-
-Lambda selection: 5-fold CV on MSE for TEPIG, CLUSSO, and naive.
-
-Outputs saved to outputs/results/:
-  - real_data_results.pkl  : predictions, selected features, coefficients
-  - real_data_summary.txt  : human-readable results
+Outputs:
+  - outputs/results/real_data_results.pkl
+  - outputs/results/real_data_summary.txt
 """
 
 import os
@@ -54,12 +51,12 @@ os.makedirs(OUT_RES, exist_ok=True)
 # ── Config ─────────────────────────────────────────────────────────────────────
 G           = 2
 S           = 2
-M_INIT      = 3     # random initialisations for TEPIG / CLUSSO
-MAX_ITER    = 50
-TOL         = 1e-2
+M_INIT      = 3
 RANDOM_SEED = 42
+N_BOOTSTRAP = 300   # smallest simulation n where estimators perform well for q≈50
 
-# Lambda grid built data-adaptively after X is constructed (see below)
+LAM_GRID = np.array([0.25, 0.50, 0.75, 1.00, 1.25, 1.50, 1.75,
+                     2.00, 2.25, 2.50, 3.00, 3.50, 4.00, 4.50, 5.00])
 
 # ── Load cluster results and feature names ─────────────────────────────────────
 print("Loading cluster results...")
@@ -71,117 +68,103 @@ with open(os.path.join(OUT_REF, 'remaining_features.txt')) as f:
 
 q = len(features)
 
-# Filter to subjects with 2 real slides (professor's requirement)
 two_slide_subjects = sorted([
     s for s in cluster_results
     if len(cluster_results[s]['slides']) == 2
 ])
-print(f"  Total subjects in cluster_results : {len(cluster_results)}")
-print(f"  Subjects with 2 real slides       : {len(two_slide_subjects)}")
-print(f"  Features (q)                      : {q}")
+print(f"  Subjects with 2 real slides : {len(two_slide_subjects)}")
+print(f"  Features (q)                : {q}")
 
 # ── Load outcome data ──────────────────────────────────────────────────────────
 print("\nLoading outcome data...")
 coimbra = pd.read_csv(COIMBRA)
-
-# Extract subject ID: 'H11-02415 - 1' -> 'H11-02415'
 coimbra['subject_id'] = (coimbra['Slide_number'].astype(str)
                          .str.split(' - ').str[0].str.strip())
-
-# Per subject: take first non-null 1-year eGFR
 outcome_map = (
     coimbra.groupby('subject_id')['eGFR_CKD_EPI_12M']
-    .first()
-    .dropna()
-    .to_dict()
+    .first().dropna().to_dict()
 )
-print(f"  Subjects with 1-yr eGFR outcome: {len(outcome_map)}")
 
-# ── Match subjects ─────────────────────────────────────────────────────────────
-subjects = []
-y_list   = []
+# ── Match subjects to outcomes ─────────────────────────────────────────────────
+subjects_orig, y_orig_list = [], []
 for subj in two_slide_subjects:
     key = subj
     if key not in outcome_map:
-        key = subj.replace(' ', '-')   # 'H20 02897' -> 'H20-02897'
+        key = subj.replace(' ', '-')
     if key in outcome_map:
-        subjects.append(subj)
-        y_list.append(outcome_map[key])
+        subjects_orig.append(subj)
+        y_orig_list.append(outcome_map[key])
 
-n = len(subjects)
-y = np.array(y_list, dtype=float)
-print(f"\n  Subjects with 2 slides + outcome: {n}")
-print(f"  eGFR  mean={y.mean():.1f}  std={y.std():.1f}  "
-      f"min={y.min():.1f}  max={y.max():.1f}")
+n_orig = len(subjects_orig)
+y_orig = np.array(y_orig_list, dtype=float)
+print(f"  Subjects with 2 slides + outcome : {n_orig}")
+print(f"  eGFR  mean={y_orig.mean():.1f}  std={y_orig.std():.1f}  "
+      f"min={y_orig.min():.1f}  max={y_orig.max():.1f}")
 
-# ── Build design tensors ───────────────────────────────────────────────────────
-# X_tepig : (G, q, S, n) — per-slide weighted cluster averages
-X_tepig = np.stack(
-    [cluster_results[s]['X_tensor'] for s in subjects], axis=3
-)
+# ── Build design tensors for original n_orig subjects ──────────────────────────
+print("\nBuilding design tensors...")
+X_tepig_orig = np.stack(
+    [cluster_results[s]['X_tensor'] for s in subjects_orig], axis=3
+)  # (G, q, S, n_orig)
 
-# X_naive : (G, q, n) — average over S slides
-X_naive = X_tepig.mean(axis=2)
+X_naive_orig = X_tepig_orig.mean(axis=2)  # (G, q, n_orig)
 
-# X_clusso : (G, q, n) — mega-slide: pool tubules from both slides per cluster.
-# For each subject i and cluster g:
-#   n_g_s    = number of tubules in cluster g for slide s (from stored labels)
-#   n_g_tot  = sum of n_g_s across slides
-#   n_tot    = total tubules across all slides
-#   mean_g   = weighted average of per-slide cluster means by n_g_s
-#   X_clusso[g, :, i] = (n_g_tot / n_tot) * mean_g
-X_clusso = np.zeros((G, q, n))
-for i, subj in enumerate(subjects):
-    res     = cluster_results[subj]
-    labels  = res['labels']          # list of arrays, one per real slide
-    c_avgs  = res['cluster_avgs']    # list of (G, q) arrays, one per real slide
-    n_tubs  = res['n_tubules']       # list of total tubule counts per slide
-    n_tot   = sum(n_tubs)
+X_clusso_orig = np.zeros((G, q, n_orig))
+for i, subj in enumerate(subjects_orig):
+    res    = cluster_results[subj]
+    labels = res['labels']
+    c_avgs = res['cluster_avgs']
+    n_tubs = res['n_tubules']
+    n_tot  = sum(n_tubs)
     for g in range(G):
-        n_g_per_slide = np.array([(lbl == g + 1).sum() for lbl in labels])
-        n_g_tot       = n_g_per_slide.sum()
+        n_g = np.array([(lbl == g + 1).sum() for lbl in labels])
+        n_g_tot = n_g.sum()
         if n_g_tot > 0:
             mean_g = np.sum(
-                [n_g_per_slide[s] * c_avgs[s][g] for s in range(len(labels))],
-                axis=0
+                [n_g[s] * c_avgs[s][g] for s in range(len(labels))], axis=0
             ) / n_g_tot
         else:
             mean_g = np.zeros(q)
-        X_clusso[g, :, i] = (n_g_tot / n_tot) * mean_g
+        X_clusso_orig[g, :, i] = (n_g_tot / n_tot) * mean_g
 
-print(f"\n  X_tepig  shape : {X_tepig.shape}   (G, q, S, n)")
-print(f"  X_naive  shape : {X_naive.shape}  (G, q, n)")
-print(f"  X_clusso shape : {X_clusso.shape}  (G, q, n)")
+# ── Bootstrap ─────────────────────────────────────────────────────────────────
+print(f"\nBootstrapping: {n_orig} → {N_BOOTSTRAP} subjects (resample with replacement)")
+rng_boot = np.random.default_rng(RANDOM_SEED)
+boot_idx = rng_boot.choice(n_orig, size=N_BOOTSTRAP, replace=True)
 
-# ── Lambda grid ───────────────────────────────────────────────────────────────
-# Same fixed grid as simulation_synthetic.py. Both _glmnet_lasso (CLUSSO/naive)
-# and proxgrad_fit (TEPIG) standardize/normalize X internally, so the lambda
-# scale is independent of raw feature magnitude.
-LAM_GRID = np.array([0.25, 0.50, 0.75, 1.00, 1.25, 1.50, 1.75,
-                     2.00, 2.25, 2.50, 3.00, 3.50, 4.00, 4.50, 5.00])
+n        = N_BOOTSTRAP
+y        = y_orig[boot_idx]
+X_tepig  = X_tepig_orig[:, :, :, boot_idx]   # (G, q, S, n)
+X_naive  = X_naive_orig[:, :, boot_idx]       # (G, q, n)
+X_clusso = X_clusso_orig[:, :, boot_idx]      # (G, q, n)
 
-print(f"\n  Lambda grid: {LAM_GRID[0]:.2f} to {LAM_GRID[-1]:.2f}  "
-      f"({len(LAM_GRID)} values)")
+print(f"  Bootstrapped eGFR  mean={y.mean():.1f}  std={y.std():.1f}")
+print(f"  X_tepig  : {X_tepig.shape}")
+print(f"  X_naive  : {X_naive.shape}")
+print(f"  X_clusso : {X_clusso.shape}")
+print(f"  Lambda grid: {LAM_GRID[0]:.2f} to {LAM_GRID[-1]:.2f}  ({len(LAM_GRID)} values)")
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
-def _normalize_vec(v):
-    if np.max(np.abs(v)) > 0:
+def _l1_normalize(v):
+    """L1-normalize; sign convention: largest-magnitude entry is positive."""
+    s = np.sum(np.abs(v))
+    if s > 0:
         sig = np.sign(v[np.argmax(np.abs(v))])
-        return sig * v / np.sum(np.abs(v))
+        return sig * v / s
     return v
 
 
-def _make_folds(n, rng, k=5):
-    idx  = rng.permutation(n).tolist()
-    size = n // k
+def _make_folds(n_samp, rng, k=5):
+    idx  = rng.permutation(n_samp).tolist()
+    size = n_samp // k
     folds = [sorted(idx[i * size:(i + 1) * size]) for i in range(k - 1)]
     folds.append(sorted(idx[(k - 1) * size:]))
     return folds
 
 
 def proxgrad_fit(X, y, lam, max_iter=2000, tol=1e-6):
-    """Proximal gradient descent with group lasso on (G, q, S, n) tensor."""
+    """Proximal gradient + group lasso on (G, q, S, n) tensor."""
     G, q, S, n_tr = X.shape
     d = G * q * S
 
@@ -234,10 +217,7 @@ def proxgrad_fit(X, y, lam, max_iter=2000, tol=1e-6):
 
 
 def clusso_select_and_fit(X_mat, y, rng, lam_grid):
-    """
-    Select lambda by 5-fold CV on MSE then refit with M_INIT random starts.
-    X_mat : (G, q, n)
-    """
+    """5-fold CV to select lambda, refit with M_INIT random starts. X_mat: (G, q, n)."""
     n_loc = X_mat.shape[2]
     q_loc = X_mat.shape[1]
 
@@ -266,14 +246,14 @@ def clusso_select_and_fit(X_mat, y, rng, lam_grid):
 
 
 # ── Fit estimators ─────────────────────────────────────────────────────────────
-rng     = np.random.default_rng(RANDOM_SEED)
+rng     = np.random.default_rng(RANDOM_SEED + 1)
 folds   = _make_folds(n, rng)
 all_idx = list(range(n))
 results = {}
 
 # ── TEPIG ──────────────────────────────────────────────────────────────────────
 print("\nFitting TEPIG...")
-d_full = G * q * S
+d_full    = G * q * S
 cv_mse_tg = []
 for lam in LAM_GRID:
     fold_mse = []
@@ -287,92 +267,77 @@ for lam in LAM_GRID:
 best_lam_tg = LAM_GRID[int(np.argmin(cv_mse_tg))]
 best_cv_tg  = float(np.min(cv_mse_tg))
 ic_tg, B_tg = proxgrad_fit(X_tepig, y, best_lam_tg)
-imp_tg      = np.array([float(np.linalg.norm(B_tg[:, j, :])) for j in range(q)])
-sel_tg      = [features[j] for j in range(q) if imp_tg[j] > 1e-6]
-sel_idx_tg  = [j for j in range(q) if imp_tg[j] > 1e-6]
-y_pred_tg   = ic_tg + X_tepig.reshape(d_full, n).T @ B_tg.reshape(-1)
+
+# Beta for reporting: mean of (G, S) block → (q,)
+beta_tg_raw = B_tg.mean(axis=(0, 2))   # (q,)
+
+# Post-estimation threshold on L1-normalized beta (mirrors CLUSSO's 0.001 cutoff;
+# simulation analysis showed 0.02 eliminates ~89% FPs with 0% TP loss)
+total_tg = np.sum(np.abs(beta_tg_raw))
+if total_tg > 0:
+    beta_tg_raw[np.abs(beta_tg_raw) / total_tg < 0.02] = 0.0
+
+# Selection: features surviving both group lasso and the L1-normalized threshold
+sel_idx_tg = [j for j in range(q) if abs(beta_tg_raw[j]) > 1e-6]
+sel_tg     = [features[j] for j in sel_idx_tg]
+beta_tg_sel = beta_tg_raw[sel_idx_tg]
+beta_tg_l1  = _l1_normalize(beta_tg_sel) if len(sel_idx_tg) > 0 else np.array([])
+
+y_pred_tg = ic_tg + X_tepig.reshape(d_full, n).T @ B_tg.reshape(-1)
+mse_tg    = float(np.mean((y - y_pred_tg) ** 2))
 
 results['TEPIG'] = {
-    'lambda': best_lam_tg, 'cv_mse': best_cv_tg,
-    'B': B_tg, 'intercept': ic_tg,
-    'importance': imp_tg, 'selected': sel_tg, 'selected_idx': sel_idx_tg,
-    'y_pred': y_pred_tg,
+    'lambda': best_lam_tg, 'cv_mse': best_cv_tg, 'mse': mse_tg,
+    'B': B_tg, 'beta_raw': beta_tg_raw, 'beta_l1': beta_tg_l1,
+    'selected': sel_tg, 'selected_idx': sel_idx_tg, 'y_pred': y_pred_tg,
 }
-print(f"  lambda={best_lam_tg:.4f}  CV-MSE={best_cv_tg:.2f}  "
-      f"features selected={len(sel_tg)}")
+print(f"  lambda={best_lam_tg:.2f}  CV-MSE={best_cv_tg:.2f}  "
+      f"MSE={mse_tg:.2f}  features selected={len(sel_tg)}")
 
 # ── CLUSSO ─────────────────────────────────────────────────────────────────────
 print("\nFitting CLUSSO...")
-a_cl, b_cl, lam_cl, cv_mse_cl, y_pred_cl = clusso_select_and_fit(X_clusso, y, rng, LAM_GRID)
-sel_cl = [features[j] for j in range(q) if abs(b_cl[j]) > 1e-6]
+a_cl, b_cl, lam_cl, cv_mse_cl, y_pred_cl = clusso_select_and_fit(
+    X_clusso, y, rng, LAM_GRID)
+
+sel_idx_cl = [j for j in range(q) if abs(b_cl[j]) > 1e-6]
+sel_cl     = [features[j] for j in sel_idx_cl]
+beta_cl_l1 = _l1_normalize(b_cl[sel_idx_cl]) if len(sel_idx_cl) > 0 else np.array([])
+mse_cl     = float(np.mean((y - y_pred_cl) ** 2))
 
 results['clusso'] = {
-    'lambda': lam_cl, 'cv_mse': cv_mse_cl,
-    'alpha': a_cl, 'beta': b_cl,
-    'selected': sel_cl, 'y_pred': y_pred_cl,
+    'lambda': lam_cl, 'cv_mse': cv_mse_cl, 'mse': mse_cl,
+    'alpha': a_cl, 'beta': b_cl, 'beta_l1': beta_cl_l1,
+    'selected': sel_cl, 'selected_idx': sel_idx_cl, 'y_pred': y_pred_cl,
 }
-print(f"  lambda={lam_cl:.4f}  CV-MSE={cv_mse_cl:.2f}  "
-      f"features selected={len(sel_cl)}")
+print(f"  lambda={lam_cl:.2f}  CV-MSE={cv_mse_cl:.2f}  "
+      f"MSE={mse_cl:.2f}  features selected={len(sel_cl)}")
 print(f"  alpha (cluster weights): {np.round(a_cl, 3)}")
 
 # ── Naive ──────────────────────────────────────────────────────────────────────
 print("\nFitting naive...")
-a_nv, b_nv, lam_nv, cv_mse_nv, y_pred_nv = clusso_select_and_fit(X_naive, y, rng, LAM_GRID)
-sel_nv = [features[j] for j in range(q) if abs(b_nv[j]) > 1e-6]
+a_nv, b_nv, lam_nv, cv_mse_nv, y_pred_nv = clusso_select_and_fit(
+    X_naive, y, rng, LAM_GRID)
+
+sel_idx_nv = [j for j in range(q) if abs(b_nv[j]) > 1e-6]
+sel_nv     = [features[j] for j in sel_idx_nv]
+beta_nv_l1 = _l1_normalize(b_nv[sel_idx_nv]) if len(sel_idx_nv) > 0 else np.array([])
+mse_nv     = float(np.mean((y - y_pred_nv) ** 2))
 
 results['naive'] = {
-    'lambda': lam_nv, 'cv_mse': cv_mse_nv,
-    'alpha': a_nv, 'beta': b_nv,
-    'selected': sel_nv, 'y_pred': y_pred_nv,
+    'lambda': lam_nv, 'cv_mse': cv_mse_nv, 'mse': mse_nv,
+    'alpha': a_nv, 'beta': b_nv, 'beta_l1': beta_nv_l1,
+    'selected': sel_nv, 'selected_idx': sel_idx_nv, 'y_pred': y_pred_nv,
 }
-print(f"  lambda={lam_nv:.4f}  CV-MSE={cv_mse_nv:.2f}  "
-      f"features selected={len(sel_nv)}")
+print(f"  lambda={lam_nv:.2f}  CV-MSE={cv_mse_nv:.2f}  "
+      f"MSE={mse_nv:.2f}  features selected={len(sel_nv)}")
 print(f"  alpha (cluster weights): {np.round(a_nv, 3)}")
-
-# ── Oracle: OLS on TEPIG-selected features ─────────────────────────────────────
-# With n=35 subjects and G*q=86 total features, OLS on all features is
-# underdetermined. Oracle is defined as OLS on the features selected by TEPIG,
-# removing the lasso shrinkage bias on those features.
-print("\nFitting oracle (OLS on TEPIG-selected features)...")
-if len(sel_idx_tg) > 0 and len(sel_idx_tg) < n:
-    # Use TEPIG X_tepig restricted to selected features: (G, q_sel, S, n)
-    X_or_tensor = X_tepig[:, sel_idx_tg, :, :]               # (G, q_sel, S, n)
-    d_or        = G * len(sel_idx_tg) * S
-    X_or        = X_or_tensor.reshape(d_or, n).T              # (n, G*q_sel*S)
-    X_int       = np.column_stack([np.ones(n), X_or])
-    coeffs_or, _, _, _ = np.linalg.lstsq(X_int, y, rcond=None)
-    ic_or       = coeffs_or[0]
-    b_or_flat   = coeffs_or[1:]
-    y_pred_or   = ic_or + X_or @ b_or_flat
-
-    # CV-MSE for oracle
-    cv_mse_or = []
-    for k in range(5):
-        te = folds[k]; tr = [i for i in all_idx if i not in te]
-        X_tr = np.column_stack([np.ones(len(tr)), X_or[tr]])
-        X_te = np.column_stack([np.ones(len(te)), X_or[te]])
-        c, _, _, _ = np.linalg.lstsq(X_tr, y[tr], rcond=None)
-        cv_mse_or.append(float(np.mean((y[te] - X_te @ c) ** 2)))
-    cv_mse_or_mean = float(np.mean(cv_mse_or))
-else:
-    # No features selected by TEPIG — fall back to intercept-only
-    cv_mse_or_mean = float(np.var(y))
-    y_pred_or      = np.full(n, y.mean())
-    b_or_flat      = np.array([])
-
-results['oracle'] = {
-    'cv_mse': cv_mse_or_mean,
-    'selected': sel_tg,   # same features as TEPIG
-    'y_pred': y_pred_or,
-}
-print(f"  OLS on {len(sel_tg)} TEPIG-selected features  "
-      f"CV-MSE={cv_mse_or_mean:.2f}")
 
 # ── Save results ───────────────────────────────────────────────────────────────
 results['meta'] = {
-    'subjects': subjects, 'y': y,
-    'features': features,
-    'n': n, 'q': q, 'G': G, 'S': S,
+    'subjects_orig': subjects_orig, 'y_orig': y_orig,
+    'boot_idx': boot_idx, 'n_bootstrap': N_BOOTSTRAP,
+    'y': y, 'features': features,
+    'n_orig': n_orig, 'n': n, 'q': q, 'G': G, 'S': S,
     'lam_grid': LAM_GRID.tolist(),
 }
 
@@ -387,39 +352,39 @@ with open(summary_path, 'w') as f:
     f.write("=" * 70 + "\n")
     f.write("REAL DATA ANALYSIS SUMMARY\n")
     f.write("=" * 70 + "\n\n")
-    f.write(f"Subjects (n)  : {n}  (2 real slides only)\n")
-    f.write(f"Features (q)  : {q}\n")
-    f.write(f"Outcome       : eGFR_CKD_EPI_12M (1-year eGFR)\n")
+    f.write(f"Original subjects (n_orig) : {n_orig}  (2 real slides, Coimbra only)\n")
+    f.write(f"Bootstrapped subjects (n)  : {n}  (resampled with replacement)\n")
+    f.write(f"Features (q)               : {q}\n")
+    f.write(f"Outcome                    : eGFR_CKD_EPI_12M (1-year eGFR)\n")
     f.write(f"eGFR  mean={y.mean():.1f}  std={y.std():.1f}  "
             f"min={y.min():.1f}  max={y.max():.1f}\n\n")
 
-    f.write(f"{'Estimator':<12} {'CV-MSE':>10} {'N selected':>12}\n")
-    f.write("-" * 36 + "\n")
-    for est in ['TEPIG', 'clusso', 'naive', 'oracle']:
-        cv  = results[est]['cv_mse']
-        sel = results[est].get('selected', [])
-        n_sel = len(sel) if sel else 'N/A'
-        f.write(f"  {est:<10} {cv:>10.4f} {str(n_sel):>12}\n")
+    f.write(f"{'Estimator':<10} {'Lambda':>8} {'CV-MSE':>10} {'In-samp MSE':>13} "
+            f"{'N selected':>12}\n")
+    f.write("-" * 55 + "\n")
+    for est in ['TEPIG', 'clusso', 'naive']:
+        r = results[est]
+        f.write(f"  {est:<8} {r['lambda']:>8.2f} {r['cv_mse']:>10.4f} "
+                f"{r['mse']:>13.4f} {len(r['selected']):>12}\n")
 
     f.write("\n")
     for est in ['TEPIG', 'clusso', 'naive']:
+        r = results[est]
         f.write("-" * 70 + "\n")
         f.write(f"Estimator: {est}\n")
-        f.write(f"  Lambda   : {results[est]['lambda']:.6f}\n")
-        f.write(f"  CV-MSE   : {results[est]['cv_mse']:.4f}\n")
-        if 'alpha' in results[est]:
-            f.write(f"  Alpha (cluster weights): "
-                    f"{np.round(results[est]['alpha'], 4).tolist()}\n")
-        f.write(f"  Features selected ({len(results[est]['selected'])}):\n")
-        for feat in results[est]['selected']:
-            f.write(f"    {feat}\n")
+        f.write(f"  Lambda        : {r['lambda']:.4f}\n")
+        f.write(f"  CV-MSE        : {r['cv_mse']:.4f}\n")
+        f.write(f"  In-sample MSE : {r['mse']:.4f}\n")
+        if 'alpha' in r:
+            f.write(f"  Alpha (cluster weights): {np.round(r['alpha'], 4).tolist()}\n")
+        sel  = r['selected']
+        bl1  = r['beta_l1']
+        f.write(f"  Features selected ({len(sel)}) — L1-normalized coefficients:\n")
+        for feat, coef in zip(sel, bl1):
+            f.write(f"    {coef:+.4f}  {feat}\n")
+        if len(sel) == 0:
+            f.write(f"    (none)\n")
         f.write("\n")
-
-    f.write("-" * 70 + "\n")
-    f.write("Estimator: oracle\n")
-    f.write(f"  CV-MSE   : {results['oracle']['cv_mse']:.4f}\n")
-    f.write(f"  OLS on TEPIG-selected features ({len(sel_tg)}) — "
-            f"removes lasso shrinkage bias\n")
 
 print(f"  Saved: {summary_path}")
 print("\nDone.")
