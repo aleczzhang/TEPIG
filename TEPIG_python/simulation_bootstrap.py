@@ -36,7 +36,6 @@ import pickle
 import numpy as np
 from joblib import Parallel, delayed
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'CLUSSO_python'))
 from Mainfunction_albet import Mainfunction_albet, _glmnet_lasso
 from SLasso_MSE import lambda_CV_mse
 

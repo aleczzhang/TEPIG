@@ -7,7 +7,6 @@ import warnings
 import numpy as np
 warnings.filterwarnings('ignore')  # suppress overflow/NaN warnings from near-zero features
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'CLUSSO_python'))
 
 # ── Load data (same setup as simulation.py) ────────────────────────────────
 _BASE    = os.path.join(os.path.dirname(__file__), '..', 'outputs')
