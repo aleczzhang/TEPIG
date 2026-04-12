@@ -2,7 +2,7 @@
 #SBATCH --job-name=tepig_syn_%a
 #SBATCH --account=staraptor-lab-aac
 #SBATCH --partition=standard
-#SBATCH --time=12:00:00
+#SBATCH --time=24:00:00
 #SBATCH --cpus-per-task=16
 #SBATCH --mem-per-cpu=4096
 #SBATCH --array=0-69
