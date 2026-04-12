@@ -46,7 +46,7 @@ from Mainfunction_albet import Mainfunction_albet, _glmnet_lasso
 from SLasso_MSE import lambda_CV_mse
 
 _BASE    = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'outputs')
-OUT_DATA = os.path.join(_BASE, 'data', 'after_avg')
+OUT_DATA = os.path.join(_BASE, 'data', 'threshold_001')
 OUT_SUMM = os.path.join(_BASE, 'results')
 os.makedirs(OUT_DATA, exist_ok=True)
 os.makedirs(OUT_SUMM, exist_ok=True)
@@ -371,7 +371,7 @@ def run_one_sim(seed):
     # simulation analysis showed 0.02 eliminates ~89% FPs with 0% TP loss)
     total_f = np.sum(np.abs(beta_hat_f))
     if total_f > 0:
-        beta_hat_f[np.abs(beta_hat_f) / total_f < 0.02] = 0.0
+        beta_hat_f[np.abs(beta_hat_f) / total_f < 0.001] = 0.0
     y_pred_f   = ic_f + X_tepig.reshape(d_full, n).T @ B_f.reshape(-1)
     results['tepig'] = compute_metrics(beta_hat_f, y, y_pred_f, beta_star)
 
