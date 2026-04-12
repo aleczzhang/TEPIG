@@ -46,7 +46,7 @@ from Mainfunction_albet import Mainfunction_albet, _glmnet_lasso
 from SLasso_MSE import lambda_CV_mse
 
 _BASE    = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'outputs')
-OUT_DATA = os.path.join(_BASE, 'data', 'threshold_001')
+OUT_DATA = os.path.join(_BASE, 'data', 'threshold_cmp')
 OUT_SUMM = os.path.join(_BASE, 'results')
 os.makedirs(OUT_DATA, exist_ok=True)
 os.makedirs(OUT_SUMM, exist_ok=True)
@@ -352,7 +352,7 @@ def run_one_sim(seed):
     all_idx  = list(range(n))
     folds    = _make_folds(n, rng)
 
-    # ── tepig ─────────────────────────────────────────────────────────────────
+    # ── tepig: fit once, apply multiple post-estimation thresholds ───────────
     d_full = G * q * S
     cv_mse = []
     for lam in LAM_GRID:
@@ -364,16 +364,37 @@ def run_one_sim(seed):
             fold_mse.append(float(np.mean((y[te] - ypred) ** 2)))
         cv_mse.append(float(np.mean(fold_mse)))
 
-    best_lam   = LAM_GRID[int(np.argmin(cv_mse))]
-    ic_f, B_f  = proxgrad_fit(X_tepig, y, best_lam)
-    beta_hat_f = B_f.mean(axis=(0, 2))   # average over G and S → (q,)
-    # Post-estimation threshold on L1-normalized beta (mirrors CLUSSO's 0.001 cutoff;
-    # simulation analysis showed 0.02 eliminates ~89% FPs with 0% TP loss)
-    total_f = np.sum(np.abs(beta_hat_f))
-    if total_f > 0:
-        beta_hat_f[np.abs(beta_hat_f) / total_f < 0.001] = 0.0
-    y_pred_f   = ic_f + X_tepig.reshape(d_full, n).T @ B_f.reshape(-1)
-    results['tepig'] = compute_metrics(beta_hat_f, y, y_pred_f, beta_star)
+    best_lam  = LAM_GRID[int(np.argmin(cv_mse))]
+    ic_f, B_f = proxgrad_fit(X_tepig, y, best_lam)
+    beta_raw  = B_f.mean(axis=(0, 2))          # raw beta, shape (q,)
+    y_pred_f  = ic_f + X_tepig.reshape(d_full, n).T @ B_f.reshape(-1)
+
+    # Block Frobenius norms — shape (q,). Used for norm-based selection variants.
+    block_norms = np.sqrt(np.sum(B_f ** 2, axis=(0, 2)))
+
+    # Adaptive threshold: sigma_hat * sqrt(2 * log(q) / n)
+    sigma_hat = float(np.std(y - y_pred_f, ddof=1))
+    tau_adapt = sigma_hat * np.sqrt(2.0 * np.log(q) / n)
+
+    # Mean selection: threshold on |mean(B[:,j,:])|
+    for thr, key in [(0.001, 'tepig_raw_001'), (0.01, 'tepig_raw_010'), (0.02, 'tepig_raw_020')]:
+        b = beta_raw.copy()
+        b[np.abs(b) < thr] = 0.0
+        results[key] = compute_metrics(b, y, y_pred_f, beta_star)
+
+    beta_adapt = beta_raw.copy()
+    beta_adapt[np.abs(beta_adapt) < tau_adapt] = 0.0
+    results['tepig_raw_adapt'] = compute_metrics(beta_adapt, y, y_pred_f, beta_star)
+
+    # Norm selection: threshold on ||B[:,j,:]||_F, report mean as coefficient value
+    for thr, key in [(0.001, 'tepig_norm_001'), (0.01, 'tepig_norm_010'), (0.02, 'tepig_norm_020')]:
+        b = beta_raw.copy()
+        b[block_norms < thr] = 0.0
+        results[key] = compute_metrics(b, y, y_pred_f, beta_star)
+
+    beta_norm_adapt = beta_raw.copy()
+    beta_norm_adapt[block_norms < tau_adapt] = 0.0
+    results['tepig_norm_adapt'] = compute_metrics(beta_norm_adapt, y, y_pred_f, beta_star)
 
     # ── tepig_lowrank (reference only — not included in summary/plots) ────────
     cv_mse_t = []
@@ -439,7 +460,9 @@ if __name__ == '__main__':
         delayed(run_one_sim)(s) for s in seed_ints
     )
 
-    estimators  = ['tepig', 'tepig_lowrank', 'clusso', 'naive', 'oracle']
+    estimators  = ['tepig_raw_001', 'tepig_raw_010', 'tepig_raw_020', 'tepig_raw_adapt',
+                    'tepig_norm_001', 'tepig_norm_010', 'tepig_norm_020', 'tepig_norm_adapt',
+                    'tepig_lowrank', 'clusso', 'naive', 'oracle']
     metric_keys = ['tpr', 'fpr', 'l1', 'mse']
 
     summary = {est: {m: [] for m in metric_keys} for est in estimators}
@@ -476,22 +499,22 @@ if __name__ == '__main__':
         f.write(f"B={B_SIMS} reps | n={N} | q={Q} | G={G} | S={S} | K={K}\n")
         f.write(f"n_nonzero={N_NZ} | sparsity={SPARSITY} | sigma={SIGMA} | sigma_R={SIGMA_R}\n")
         f.write(f"B_TRUE_BLOCK: {B_TRUE_BLOCK.tolist()}\n\n")
-        f.write(f"{'Estimator':<14} {'TPR':>8} {'FPR':>8} {'L1 bias':>10} {'MSE':>10}\n")
-        f.write("-" * 54 + "\n")
+        f.write(f"{'Estimator':<18} {'TPR':>8} {'FPR':>8} {'L1 bias':>10} {'MSE':>10}\n")
+        f.write("-" * 58 + "\n")
         for est in estimators:
             tpr = float(np.nanmean(summary[est]['tpr']))
             fpr = float(np.nanmean(summary[est]['fpr']))
             l1  = float(np.nanmean(summary[est]['l1']))
             mse = float(np.nanmean(summary[est]['mse']))
-            f.write(f"  {est:<12} {tpr:>8.3f} {fpr:>8.3f} {l1:>10.3f} {mse:>10.3f}\n")
+            f.write(f"  {est:<16} {tpr:>8.3f} {fpr:>8.3f} {l1:>10.3f} {mse:>10.3f}\n")
 
     print(f"\nSaved: {pkl_path}")
     print(f"Saved: {txt_path}")
-    print(f"\n{'Estimator':<14} {'TPR':>8} {'FPR':>8} {'L1 bias':>10} {'MSE':>10}")
-    print("-" * 54)
+    print(f"\n{'Estimator':<18} {'TPR':>8} {'FPR':>8} {'L1 bias':>10} {'MSE':>10}")
+    print("-" * 58)
     for est in estimators:
         tpr = float(np.nanmean(summary[est]['tpr']))
         fpr = float(np.nanmean(summary[est]['fpr']))
         l1  = float(np.nanmean(summary[est]['l1']))
         mse = float(np.nanmean(summary[est]['mse']))
-        print(f"  {est:<12} {tpr:>8.3f} {fpr:>8.3f} {l1:>10.3f} {mse:>10.3f}")
+        print(f"  {est:<16} {tpr:>8.3f} {fpr:>8.3f} {l1:>10.3f} {mse:>10.3f}")

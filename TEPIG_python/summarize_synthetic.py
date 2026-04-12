@@ -11,14 +11,26 @@ import os
 import pickle
 import numpy as np
 
+import argparse
+
+_parser = argparse.ArgumentParser()
+_parser.add_argument('--folder', default='after_avg',
+                     help='Subfolder under outputs/data/ to read from')
+_args = _parser.parse_args()
+
 _BASE    = os.path.join(os.path.dirname(__file__), '..', 'outputs')
-OUT_DATA = os.path.join(_BASE, 'data', 'after_avg')
-OUT_SUMM = os.path.join(_BASE, 'summaries')
+OUT_DATA = os.path.join(_BASE, 'data', _args.folder)
+OUT_SUMM = os.path.join(_BASE, 'summaries', _args.folder)
+os.makedirs(OUT_SUMM, exist_ok=True)
 
 N_VALUES    = [300, 500, 700, 900, 1100, 1500, 2000]
 Q_VALUES    = [10, 50, 100, 150, 200]
 S_VALUES    = [0.4, 0.8]
-ESTIMATORS  = ['tepig', 'clusso', 'naive', 'oracle']
+
+# Auto-detect estimators from first available pkl
+ESTIMATORS = ['tepig_raw_001', 'tepig_raw_010', 'tepig_raw_020', 'tepig_raw_adapt',
+              'tepig_norm_001', 'tepig_norm_010', 'tepig_norm_020', 'tepig_norm_adapt',
+              'clusso', 'naive', 'oracle']
 METRICS     = ['tpr', 'fpr', 'l1', 'mse']
 
 rows = []
@@ -53,12 +65,12 @@ if missing:
     print()
 
 # ── Print table ────────────────────────────────────────────────────────────────
-header  = f"{'sparsity':>9} {'q':>5} {'n':>6}  {'Estimator':<14} {'TPR':>7} {'FPR':>7} {'L1 bias':>9} {'MSE':>9}"
+header  = f"{'sparsity':>9} {'q':>5} {'n':>6}  {'Estimator':<18} {'TPR':>7} {'FPR':>7} {'L1 bias':>9} {'MSE':>9}"
 divider = "-" * len(header)
 
 lines = []
 lines.append("=" * len(header))
-lines.append("TEPIG SYNTHETIC SIMULATION — ALL SETTINGS")
+lines.append(f"TEPIG SYNTHETIC SIMULATION — ALL SETTINGS ({_args.folder})")
 lines.append("G=2, S=2, K=40 tubules/slide, B=200 reps")
 lines.append("=" * len(header))
 lines.append(header)
@@ -70,7 +82,7 @@ for r in rows:
         lines.append(divider)
         prev_key = key
     lines.append(
-        f"  {r['sparsity']:>7.1f} {r['q']:>5} {r['n']:>6}  {r['est']:<14}"
+        f"  {r['sparsity']:>7.1f} {r['q']:>5} {r['n']:>6}  {r['est']:<18}"
         f" {r['tpr']:>7.3f} {r['fpr']:>7.3f} {r['l1']:>9.3f} {r['mse']:>9.3f}"
     )
 
@@ -79,7 +91,7 @@ lines.append("=" * len(header))
 output = "\n".join(lines)
 print(output)
 
-out_path = os.path.join(OUT_SUMM, 'simulation_synthetic_summary_all.txt')
+out_path = os.path.join(OUT_SUMM, f'simulation_synthetic_summary_{_args.folder}.txt')
 with open(out_path, 'w') as f:
     f.write(output + "\n")
 print(f"\nSaved to {out_path}")
