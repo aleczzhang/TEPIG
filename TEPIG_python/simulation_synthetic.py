@@ -42,6 +42,7 @@ import numpy as np
 from joblib import Parallel, delayed
 warnings.filterwarnings('ignore')
 
+from sklearn.linear_model import LassoCV
 from Mainfunction_albet import Mainfunction_albet, _glmnet_lasso
 from SLasso_MSE import lambda_CV_mse
 
@@ -334,6 +335,40 @@ def clusso_select_and_fit(X_mat, y, rng, folds, all_idx):
     return best_b, y_pred
 
 
+# ── naive_lasso_fit: standard lasso on (n, q) averaged design matrix ──────────
+
+def naive_lasso_fit(X_flat, y):
+    """
+    X_flat : (n, q) — X averaged over G and S (one vector per subject).
+    Matches CLUSSO paper naive approach: standardize X, center y, LassoCV
+    with 100-point glmnet-style lambda path, back-transform coefficients.
+    No alpha term. Returns beta (q,), y_pred (n,).
+    """
+    n = X_flat.shape[0]
+    # Standardize X (match glmnet standardize=TRUE)
+    X_mu    = X_flat.mean(axis=0)
+    X_c     = X_flat - X_mu
+    X_scale = np.sqrt((X_c ** 2).mean(axis=0))
+    X_scale = np.where(X_scale > 1e-10, X_scale, 1.0)
+    X_std   = X_c / X_scale
+    # Center y
+    y_mu = y.mean(); y_c = y - y_mu
+    # 100-point glmnet-style lambda path
+    lambda_max = float(np.max(np.abs(X_std.T @ y_c)) / n)
+    lambdas_R  = np.exp(np.linspace(np.log(lambda_max),
+                                    np.log(lambda_max * 1e-4), 100))
+    model = LassoCV(cv=5, alphas=lambdas_R / 2.0,
+                    fit_intercept=False, max_iter=100_000)
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')
+        model.fit(X_std, y_c)
+    # Back-transform to original scale
+    beta      = model.coef_ / X_scale
+    intercept = float(y_mu - X_mu @ beta)
+    y_pred    = intercept + X_flat @ beta
+    return beta, y_pred
+
+
 # ── Single simulation rep ──────────────────────────────────────────────────────
 
 def run_one_sim(seed):
@@ -429,9 +464,9 @@ def run_one_sim(seed):
     b_clusso, y_pred_clusso = clusso_select_and_fit(X_clusso, y, rng, folds, all_idx)
     results['clusso'] = compute_metrics(b_clusso, y, y_pred_clusso, beta_star)
 
-    # ── naive: average TEPIG slides -> (G, q, n) ──────────────────────────────
-    X_naive = X_tepig.mean(axis=2)   # (G, q, n)
-    b_naive, y_pred_naive = clusso_select_and_fit(X_naive, y, rng, folds, all_idx)
+    # ── naive: average over G and S → (n, q), fit standard lasso ─────────────
+    X_naive_flat = X_tepig.mean(axis=(0, 2)).T   # (n, q)
+    b_naive, y_pred_naive = naive_lasso_fit(X_naive_flat, y)
     results['naive'] = compute_metrics(b_naive, y, y_pred_naive, beta_star)
 
     # ── oracle ────────────────────────────────────────────────────────────────

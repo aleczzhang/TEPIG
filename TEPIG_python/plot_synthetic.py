@@ -21,7 +21,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 _BASE    = os.path.join(os.path.dirname(__file__), '..', 'outputs')
-OUT_DATA = os.path.join(_BASE, 'data', 'after_avg')
+OUT_DATA = os.path.join(_BASE, 'data', 'threshold_cmp')
 OUT_FIG  = os.path.join(_BASE, 'figures')
 os.makedirs(OUT_FIG, exist_ok=True)
 
@@ -30,17 +30,17 @@ Q_VALUES = [10, 50, 100, 150, 200]
 S_VALUES = [0.4, 0.8]
 
 ESTIMATORS = [
-    ('tepig',  'TEPIG',   'steelblue',      '-',   'o', 5),
-    ('clusso', 'CLUSSO',  'mediumseagreen', '-',   's', 5),
-    ('naive',  'Naive',   'darkorange',     '--',  '^', 5),
-    ('oracle', 'Oracle',  'mediumpurple',   '-.',  'D', 5),
+    ('tepig_norm_adapt', 'TEPIG',   'steelblue',      '-',   'o', 5),
+    ('clusso',           'CLUSSO',  'mediumseagreen', '-',   's', 5),
+    ('naive',            'Naive',   'darkorange',     '--',  '^', 5),
+    ('oracle',           'Oracle',  'mediumpurple',   '-.',  'D', 5),
 ]
 
+# (key, label, log_scale, aggregation)
 METRICS = [
-    ('tpr',  'TPR',  False),
-    ('fpr',  'FPR',  False),
-    ('l1',   'Bias', False),
-    ('mse',  'MSE',  True),   # log scale
+    ('fpr', 'FPR',        False, 'mean'),
+    ('mse', 'MSE (mean)', True,  'mean'),
+    ('mse', 'MSE (median)', True, 'median'),
 ]
 
 # ── Load all results ────────────────────────────────────────────────────────────
@@ -66,7 +66,7 @@ else:
     print(f"  Loaded {len(data)} settings.")
 
 # ── Plot ────────────────────────────────────────────────────────────────────────
-for metric_key, metric_label, use_log in METRICS:
+for metric_key, metric_label, use_log, agg_fn in METRICS:
     fig, axes = plt.subplots(
         nrows=2, ncols=5,
         figsize=(14, 5.5),
@@ -91,7 +91,8 @@ for metric_key, metric_label, use_log in METRICS:
                     summary = data[(sparsity, q, n)]
                     if est_key not in summary:
                         continue
-                    val = float(np.nanmean(summary[est_key][metric_key]))
+                    fn  = np.nanmedian if agg_fn == 'median' else np.nanmean
+                    val = float(fn(summary[est_key][metric_key]))
                     xs.append(n)
                     ys.append(val)
                 if xs:
@@ -128,7 +129,8 @@ for metric_key, metric_label, use_log in METRICS:
         hspace=0.55, wspace=0.40,
     )
 
-    out_path = os.path.join(OUT_FIG, f'simulation_synthetic_{metric_key}.png')
+    safe_label = metric_label.replace(' ', '_').replace('(', '').replace(')', '')
+    out_path = os.path.join(OUT_FIG, f'simulation_synthetic_{safe_label}.png')
     fig.savefig(out_path, dpi=150, bbox_inches='tight')
     plt.close(fig)
     print(f"  Saved: {out_path}")
