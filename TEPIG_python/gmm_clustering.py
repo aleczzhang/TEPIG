@@ -243,14 +243,11 @@ for subj, slides in subject_slides.items():
         subj_result['cluster_avgs'].append(cluster_avg)
         subj_result['weighted_avgs'].append(weighted_avg)
 
-    # If the subject has only 1 slide, create a noisy copy as slide 2.
-    # This ensures all X tensors have S=2 for consistent tensor dimensions.
-    # Noise is additive Gaussian with variance=1 (confirmed by professor).
+    # If the subject has only 1 slide, duplicate it as slide 2.
+    # Exact copy treats the single WSI as the true population average —
+    # more defensible than adding arbitrary noise (professor confirmed).
     if len(subj_result['weighted_avgs']) == 1:
-        rng  = np.random.default_rng(abs(hash(subj)) % (2**32))
-        noisy_copy = (subj_result['weighted_avgs'][0]
-                      + rng.normal(0, 1.0, subj_result['weighted_avgs'][0].shape))
-        subj_result['weighted_avgs'].append(noisy_copy)
+        subj_result['weighted_avgs'].append(subj_result['weighted_avgs'][0].copy())
 
     # Stack slides into a tensor of shape (G, q, S=2)
     # np.stack with axis=2 stacks a list of (G, q) matrices along a new 3rd axis.
