@@ -26,7 +26,7 @@ Estimators:
     tepig_lowrank : alternating rank-1 structured lasso on (G, q, S, n) tensor   [reference only]
     clusso        : Mainfunction_albet on (G=2, q, n) mega-slide (pool both slides' tubules)
     naive         : average TEPIG slides -> (G=2, q, n), run Mainfunction_albet
-    oracle        : OLS on true nonzero features only
+    oracle        : group lasso on true population-level X_true with known nonzero features (lam=1e-6)
 
 Lambda grid (fixed, same for ALL estimators):
     {0.25, 0.50, 0.75, ..., 2.50, 3.00, 3.50, 4.00, 4.50, 5.00}
@@ -65,11 +65,21 @@ SPARSITY = args.sparsity
 N_NZ     = max(1, round(Q * (1.0 - SPARSITY)))  # number of nonzero features
 
 # ── Config (fixed across all settings) ────────────────────────────────────────
-G       = 2      # number of clusters
-S       = 2      # number of slides
-K       = 40     # tubules per slide per subject (CLUSSO paper: mu_M=40)
-SIGMA   = 1.0    # outcome noise std
-SIGMA_R = 1.0    # tubule measurement noise std (CLUSSO paper: sigma_R=1)
+G          = 2      # number of clusters
+S          = 2      # number of slides
+K          = 40     # mean tubules per slide per subject (CLUSSO paper: mu_M=40)
+SIGMA_SQ_M = 5      # variance of tubule count (CLUSSO paper: sigma_sq_m=5)
+SIGMA      = 1.0    # outcome noise std
+SIGMA_R    = 1.0    # tubule measurement noise std (CLUSSO paper: sigma_R=1)
+
+# Discrete uniform range for tubule count, matching CLUSSO paper exactly:
+#   H = floor(sqrt(12 * sigma_sq_m + 1)) = 7 (odd, no adjustment needed)
+#   K_is ~ Uniform{K - (H-1)/2, ..., K + (H-1)/2} = Uniform{37, ..., 43}
+_H    = int(np.sqrt(12 * SIGMA_SQ_M + 1))
+if _H % 2 == 0:
+    _H -= 1
+K_LO  = K - (_H - 1) // 2   # 37
+K_HI  = K + (_H - 1) // 2   # 43
 B_SIMS  = 200    # simulation repetitions
 N_JOBS  = -1     # joblib: -1 uses all available cores
 RANDOM_SEED = 42
@@ -89,7 +99,7 @@ B_TRUE_BLOCK = np.array([[1.0, 2.0],
 sparsity_str = f"{int(SPARSITY * 10):02d}"   # "08" for 0.8, "04" for 0.4
 
 print(f"simulation_synthetic.py | n={N}, q={Q}, sparsity={SPARSITY}, n_nonzero={N_NZ}")
-print(f"  G={G}, S={S}, K={K} tubules/slide")
+print(f"  G={G}, S={S}, K={K} tubules/slide (discrete uniform {{{K_LO}..{K_HI}}})")
 print(f"  B_TRUE_BLOCK det={float(np.linalg.det(B_TRUE_BLOCK)):.3f}  (rank-2)")
 print(f"  Lambda grid: {LAM_GRID[0]:.2f} to {LAM_GRID[-1]:.2f}  ({len(LAM_GRID)} values)")
 print(f"  Running {B_SIMS} reps with n_jobs={N_JOBS}...")
@@ -138,6 +148,7 @@ def generate_data(rng, n, q):
     Returns
     -------
     X_tepig  : (G, q, S, n)  — per-slide cluster weighted averages for TEPIG
+    X_true   : (G, q, S, n)  — true population-level weighted averages (no tubule noise)
     X_clusso : (G, q, n)     — mega-slide cluster weighted averages for CLUSSO
     nonzero_idx : (N_NZ,)    — randomly sampled nonzero feature indices
     B_true   : (G, q, S)     — true coefficient tensor
@@ -162,6 +173,7 @@ def generate_data(rng, n, q):
 
     # Step 3: Generate per-subject data
     X_tepig  = np.zeros((G, q, S, n))
+    X_true   = np.zeros((G, q, S, n))  # true population-level weighted averages
     X_clusso = np.zeros((G, q, n))
 
     for i in range(n):
@@ -173,15 +185,22 @@ def generate_data(rng, n, q):
             w = rng.choice(weight_choices)
             weights = np.array([w, 1.0 - w])
 
+            # Variable tubule count per subject per slide: K_is ~ Uniform{K_LO, ..., K_HI}
+            # Matches CLUSSO paper (sigma_sq_m=5 -> range 37..43)
+            K_is = int(rng.integers(K_LO, K_HI + 1))
+
             for g in range(G):
                 # Number of tubules for this cluster in this slide
-                n_tub = max(1, round(K * weights[g]))
+                n_tub = max(1, round(K_is * weights[g]))
 
                 # Draw tubules: each is latent mean + Gaussian noise
                 tubules = rng.normal(mu[g, :, s], SIGMA_R, size=(n_tub, q))
 
-                # TEPIG: weighted cluster average for this slide
+                # TEPIG: weighted cluster average (estimated from noisy tubules)
                 X_tepig[g, :, s, i] = weights[g] * tubules.mean(axis=0)
+
+                # Oracle: true population-level weighted average (no tubule noise)
+                X_true[g, :, s, i] = weights[g] * mu[g, :, s]
 
                 # Accumulate for CLUSSO mega-slide
                 clusso_tubules[g].append(tubules)
@@ -194,7 +213,7 @@ def generate_data(rng, n, q):
             overall_w_g = clusso_n_tubs[g] / total_tubs
             X_clusso[g, :, i] = overall_w_g * all_tubs_g.mean(axis=0)
 
-    return X_tepig, X_clusso, nonzero_idx, B_true, beta_star
+    return X_tepig, X_true, X_clusso, nonzero_idx, B_true, beta_star
 
 
 # ── proxgrad_fit ───────────────────────────────────────────────────────────────
@@ -377,10 +396,10 @@ def run_one_sim(seed):
     q   = Q
 
     # Generate data
-    X_tepig, X_clusso, nonzero_idx, B_true, beta_star = generate_data(rng, n, q)
+    X_tepig, X_true, X_clusso, nonzero_idx, B_true, beta_star = generate_data(rng, n, q)
 
-    # Outcome from true tensor model
-    y_true = np.einsum('gjs,gjsn->n', B_true, X_tepig)
+    # Outcome from true tensor model (uses true population-level X)
+    y_true = np.einsum('gjs,gjsn->n', B_true, X_true)
     y      = y_true + rng.normal(0, SIGMA, n)
 
     results  = {}
@@ -469,18 +488,16 @@ def run_one_sim(seed):
     b_naive, y_pred_naive = naive_lasso_fit(X_naive_flat, y)
     results['naive'] = compute_metrics(b_naive, y, y_pred_naive, beta_star)
 
-    # ── oracle ────────────────────────────────────────────────────────────────
-    n_nz     = len(nonzero_idx)
-    X_oracle = X_tepig[:, nonzero_idx, :, :].reshape(G * n_nz * S, n).T
-    X_int    = np.column_stack([np.ones(n), X_oracle])
-    coeffs, _, _, _ = np.linalg.lstsq(X_int, y, rcond=None)
-    ic_oracle     = coeffs[0]
-    B_oracle_flat = coeffs[1:]
-    B_oracle      = B_oracle_flat.reshape(G, n_nz, S)
+    # ── oracle: group lasso on true population-level X, knowing true nonzero features
+    # Uses X_true (no tubule sampling noise) — Full Information oracle analog
+    n_nz          = len(nonzero_idx)
+    X_oracle_true = X_true[:, nonzero_idx, :, :]   # (G, n_nz, S, n)
+    ic_or, B_or   = proxgrad_fit(X_oracle_true, y, lam=1e-6)
+    d_or          = G * n_nz * S
+    y_pred_oracle = ic_or + X_oracle_true.reshape(d_or, n).T @ B_or.reshape(-1)
     beta_hat_oracle = np.zeros(q)
     for k, j in enumerate(nonzero_idx):
-        beta_hat_oracle[j] = float(B_oracle[:, k, :].mean())   # average over G and S
-    y_pred_oracle = ic_oracle + X_oracle @ B_oracle_flat
+        beta_hat_oracle[j] = float(B_or[:, k, :].mean())
     results['oracle'] = compute_metrics(beta_hat_oracle, y, y_pred_oracle, beta_star)
 
     return results
