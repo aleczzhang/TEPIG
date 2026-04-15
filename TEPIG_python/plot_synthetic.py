@@ -26,7 +26,7 @@ OUT_FIG  = os.path.join(_BASE, 'figures')
 os.makedirs(OUT_FIG, exist_ok=True)
 
 N_VALUES = [300, 500, 700, 900, 1100, 1500, 2000]
-Q_VALUES = [10, 50, 100, 150, 200]
+Q_VALUES = [50, 200]
 S_VALUES = [0.4, 0.8]
 
 ESTIMATORS = [
@@ -68,8 +68,8 @@ else:
 # ── Plot ────────────────────────────────────────────────────────────────────────
 for metric_key, metric_label, use_log, agg_fn in METRICS:
     fig, axes = plt.subplots(
-        nrows=2, ncols=5,
-        figsize=(14, 5.5),
+        nrows=2, ncols=2,
+        figsize=(7, 5.5),
         constrained_layout=False,
     )
 
