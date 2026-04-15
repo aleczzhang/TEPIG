@@ -1,15 +1,14 @@
 """
 real_data_analysis.py
 ---------------------
-Apply TEPIG, CLUSSO, and naive estimators to bootstrapped Coimbra data.
+Apply TEPIG, CLUSSO, and naive estimators to Coimbra data.
 
-Only subjects with 2 real biopsy slides are used (professor requirement).
-Subjects are resampled with replacement (bootstrapping) to N_BOOTSTRAP=300,
-matching the smallest simulation sample size where estimators perform reasonably
-for q≈50 (closest simulation q to real data q=43).
+All subjects with eGFR outcomes are used (both 1-slide and 2-slide).
+1-slide subjects have their single slide duplicated as slide 2
+(exact copy — treats the WSI as the true population average).
 
-No train/test split. Lambda selected by 5-fold CV on the full bootstrapped
-dataset. In-sample MSE reported on all N_BOOTSTRAP subjects.
+80/20 train/test split. Lambda selected by 5-fold CV on training set only.
+Test MSE reported on held-out subjects never seen during fitting.
 
 TEPIG beta: mean of (G, S) block per feature → (q,) vector → L1-normalized
 for feature importance reporting (comparable to CLUSSO/naive's (q,) beta).
@@ -33,6 +32,7 @@ import numpy as np
 import pandas as pd
 warnings.filterwarnings('ignore')
 
+from sklearn.linear_model import LassoCV
 from Mainfunction_albet import Mainfunction_albet, _glmnet_lasso
 from SLasso_MSE import lambda_CV_mse
 
@@ -52,7 +52,8 @@ G           = 2
 S           = 2
 M_INIT      = 3
 RANDOM_SEED = 42
-N_BOOTSTRAP = 300   # smallest simulation n where estimators perform well for q≈50
+N_BOOTSTRAP = 300   # resample with replacement from all subjects with outcomes
+TEST_FRAC   = 0.2   # 80/20 train/test split on bootstrapped data
 
 LAM_GRID = np.array([0.25, 0.50, 0.75, 1.00, 1.25, 1.50, 1.75,
                      2.00, 2.25, 2.50, 3.00, 3.50, 4.00, 4.50, 5.00])
@@ -67,12 +68,9 @@ with open(os.path.join(OUT_REF, 'remaining_features.txt')) as f:
 
 q = len(features)
 
-two_slide_subjects = sorted([
-    s for s in cluster_results
-    if len(cluster_results[s]['slides']) == 2
-])
-print(f"  Subjects with 2 real slides : {len(two_slide_subjects)}")
-print(f"  Features (q)                : {q}")
+all_subjects = sorted(cluster_results.keys())
+print(f"  Total subjects in cluster_results : {len(all_subjects)}")
+print(f"  Features (q)                      : {q}")
 
 # ── Load outcome data ──────────────────────────────────────────────────────────
 print("\nLoading outcome data...")
@@ -84,19 +82,23 @@ outcome_map = (
     .first().dropna().to_dict()
 )
 
-# ── Match subjects to outcomes ─────────────────────────────────────────────────
-subjects_orig, y_orig_list = [], []
-for subj in two_slide_subjects:
+# ── Match all subjects (1-slide and 2-slide) to outcomes ──────────────────────
+subjects_orig, y_orig_list, n_real_slides = [], [], []
+for subj in all_subjects:
     key = subj
     if key not in outcome_map:
         key = subj.replace(' ', '-')
     if key in outcome_map:
         subjects_orig.append(subj)
         y_orig_list.append(outcome_map[key])
+        n_real_slides.append(len(cluster_results[subj]['slides']))
 
-n_orig = len(subjects_orig)
-y_orig = np.array(y_orig_list, dtype=float)
-print(f"  Subjects with 2 slides + outcome : {n_orig}")
+n_orig         = len(subjects_orig)
+y_orig         = np.array(y_orig_list, dtype=float)
+n_two_slide    = sum(s == 2 for s in n_real_slides)
+n_one_slide    = sum(s == 1 for s in n_real_slides)
+print(f"  Subjects with outcome : {n_orig}  "
+      f"(2-slide: {n_two_slide}, 1-slide duplicated: {n_one_slide})")
 print(f"  eGFR  mean={y_orig.mean():.1f}  std={y_orig.std():.1f}  "
       f"min={y_orig.min():.1f}  max={y_orig.max():.1f}")
 
@@ -106,7 +108,7 @@ X_tepig_orig = np.stack(
     [cluster_results[s]['X_tensor'] for s in subjects_orig], axis=3
 )  # (G, q, S, n_orig)
 
-X_naive_orig = X_tepig_orig.mean(axis=2)  # (G, q, n_orig)
+X_naive_orig = X_tepig_orig.mean(axis=(0, 2)).T  # (n_orig, q) — averaged over G and S
 
 X_clusso_orig = np.zeros((G, q, n_orig))
 for i, subj in enumerate(subjects_orig):
@@ -126,7 +128,7 @@ for i, subj in enumerate(subjects_orig):
             mean_g = np.zeros(q)
         X_clusso_orig[g, :, i] = (n_g_tot / n_tot) * mean_g
 
-# ── Bootstrap ─────────────────────────────────────────────────────────────────
+# ── Bootstrap then 80/20 train/test split ─────────────────────────────────────
 print(f"\nBootstrapping: {n_orig} → {N_BOOTSTRAP} subjects (resample with replacement)")
 rng_boot = np.random.default_rng(RANDOM_SEED)
 boot_idx = rng_boot.choice(n_orig, size=N_BOOTSTRAP, replace=True)
@@ -134,13 +136,22 @@ boot_idx = rng_boot.choice(n_orig, size=N_BOOTSTRAP, replace=True)
 n        = N_BOOTSTRAP
 y        = y_orig[boot_idx]
 X_tepig  = X_tepig_orig[:, :, :, boot_idx]   # (G, q, S, n)
-X_naive  = X_naive_orig[:, :, boot_idx]       # (G, q, n)
+X_naive  = X_naive_orig[boot_idx, :]          # (n, q)
 X_clusso = X_clusso_orig[:, :, boot_idx]      # (G, q, n)
 
 print(f"  Bootstrapped eGFR  mean={y.mean():.1f}  std={y.std():.1f}")
-print(f"  X_tepig  : {X_tepig.shape}")
-print(f"  X_naive  : {X_naive.shape}")
-print(f"  X_clusso : {X_clusso.shape}")
+
+print(f"\n80/20 train/test split on bootstrapped data (seed={RANDOM_SEED})")
+rng_split = np.random.default_rng(RANDOM_SEED + 10)
+shuffled  = rng_split.permutation(n)
+n_test    = max(1, int(round(n * TEST_FRAC)))
+n_train   = n - n_test
+test_idx  = sorted(shuffled[:n_test].tolist())
+train_idx = sorted(shuffled[n_test:].tolist())
+
+print(f"  n_train={n_train}  n_test={n_test}")
+print(f"  Train eGFR  mean={y[train_idx].mean():.1f}  std={y[train_idx].std():.1f}")
+print(f"  Test  eGFR  mean={y[test_idx].mean():.1f}  std={y[test_idx].std():.1f}")
 print(f"  Lambda grid: {LAM_GRID[0]:.2f} to {LAM_GRID[-1]:.2f}  ({len(LAM_GRID)} values)")
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -154,9 +165,10 @@ def _l1_normalize(v):
     return v
 
 
-def _make_folds(n_samp, rng, k=5):
-    idx  = rng.permutation(n_samp).tolist()
-    size = n_samp // k
+def _make_folds(indices, rng, k=5):
+    """Split a list of indices into k folds."""
+    idx  = rng.permutation(indices).tolist()
+    size = len(idx) // k
     folds = [sorted(idx[i * size:(i + 1) * size]) for i in range(k - 1)]
     folds.append(sorted(idx[(k - 1) * size:]))
     return folds
@@ -244,10 +256,41 @@ def clusso_select_and_fit(X_mat, y, rng, lam_grid):
     return best_a, best_b, best_lam, best_cv_mse, y_pred
 
 
+def naive_lasso_fit(X_tr, y_tr, X_te=None):
+    """
+    X_tr: (n_train, q) — training set, averaged over G and S.
+    X_te: (n_test, q)  — test set (optional).
+    Standardize X, center y, LassoCV with 100-point glmnet-style lambda path.
+    Returns cv_mse, beta (q,), y_pred_train (n_train,), y_pred_test (n_test,) or None
+    """
+    n_loc   = X_tr.shape[0]
+    X_mu    = X_tr.mean(axis=0)
+    X_c     = X_tr - X_mu
+    X_scale = np.sqrt((X_c ** 2).mean(axis=0))
+    X_scale = np.where(X_scale > 1e-10, X_scale, 1.0)
+    X_std   = X_c / X_scale
+    y_mu    = y_tr.mean(); y_c = y_tr - y_mu
+    lambda_max = float(np.max(np.abs(X_std.T @ y_c)) / n_loc)
+    lambdas_R  = np.exp(np.linspace(np.log(lambda_max),
+                                    np.log(lambda_max * 1e-4), 100))
+    model = LassoCV(cv=5, alphas=lambdas_R / 2.0,
+                    fit_intercept=False, max_iter=100_000)
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')
+        model.fit(X_std, y_c)
+    beta        = model.coef_ / X_scale
+    intercept   = float(y_mu - X_mu @ beta)
+    y_pred_tr   = intercept + X_tr @ beta
+    cv_mse      = float(model.mse_path_[
+        list(model.alphas_).index(model.alpha_)].mean())
+    y_pred_te   = (intercept + X_te @ beta) if X_te is not None else None
+    return cv_mse, beta, y_pred_tr, y_pred_te
+
+
 # ── Fit estimators ─────────────────────────────────────────────────────────────
-rng     = np.random.default_rng(RANDOM_SEED + 1)
-folds   = _make_folds(n, rng)
-all_idx = list(range(n))
+rng    = np.random.default_rng(RANDOM_SEED + 1)
+# CV folds are built over training indices only
+folds  = _make_folds(train_idx, rng)
 results = {}
 
 # ── TEPIG ──────────────────────────────────────────────────────────────────────
@@ -257,86 +300,106 @@ cv_mse_tg = []
 for lam in LAM_GRID:
     fold_mse = []
     for k in range(5):
-        te = folds[k]; tr = [i for i in all_idx if i not in te]
-        ic, B  = proxgrad_fit(X_tepig[:, :, :, tr], y[tr], lam)
-        ypred  = ic + X_tepig[:, :, :, te].reshape(d_full, len(te)).T @ B.reshape(-1)
-        fold_mse.append(float(np.mean((y[te] - ypred) ** 2)))
+        te_cv = folds[k]
+        tr_cv = [i for fold in folds for i in fold if fold is not folds[k]]
+        ic, B  = proxgrad_fit(X_tepig[:, :, :, tr_cv], y[tr_cv], lam)
+        ypred  = ic + X_tepig[:, :, :, te_cv].reshape(d_full, len(te_cv)).T @ B.reshape(-1)
+        fold_mse.append(float(np.mean((y[te_cv] - ypred) ** 2)))
     cv_mse_tg.append(float(np.mean(fold_mse)))
 
 best_lam_tg = LAM_GRID[int(np.argmin(cv_mse_tg))]
 best_cv_tg  = float(np.min(cv_mse_tg))
-ic_tg, B_tg = proxgrad_fit(X_tepig, y, best_lam_tg)
 
-# Beta for reporting: mean of (G, S) block → (q,)
+# Refit on full training set
+ic_tg, B_tg = proxgrad_fit(X_tepig[:, :, :, train_idx], y[train_idx], best_lam_tg)
+
+# Beta for reporting: mean of (G, S) block → (q,) for dimensional comparability
 beta_tg_raw = B_tg.mean(axis=(0, 2))   # (q,)
 
-# Post-estimation threshold on L1-normalized beta (mirrors CLUSSO's 0.001 cutoff;
-# simulation analysis showed 0.02 eliminates ~89% FPs with 0% TP loss)
-total_tg = np.sum(np.abs(beta_tg_raw))
-if total_tg > 0:
-    beta_tg_raw[np.abs(beta_tg_raw) / total_tg < 0.02] = 0.0
+# Selection: Frobenius norm + adaptive threshold (computed on training residuals)
+y_pred_tg_tr  = ic_tg + X_tepig[:, :, :, train_idx].reshape(d_full, n_train).T @ B_tg.reshape(-1)
+sigma_hat_tg  = float(np.std(y[train_idx] - y_pred_tg_tr, ddof=1))
+tau_tg        = sigma_hat_tg * np.sqrt(2.0 * np.log(q) / n_train)
+block_norms   = np.sqrt(np.sum(B_tg ** 2, axis=(0, 2)))   # (q,)
+beta_tg_raw[block_norms < tau_tg] = 0.0
 
-# Selection: features surviving both group lasso and the L1-normalized threshold
-sel_idx_tg = [j for j in range(q) if abs(beta_tg_raw[j]) > 1e-6]
-sel_tg     = [features[j] for j in sel_idx_tg]
+sel_idx_tg  = [j for j in range(q) if abs(beta_tg_raw[j]) > 1e-6]
+sel_tg      = [features[j] for j in sel_idx_tg]
 beta_tg_sel = beta_tg_raw[sel_idx_tg]
 beta_tg_l1  = _l1_normalize(beta_tg_sel) if len(sel_idx_tg) > 0 else np.array([])
 
-y_pred_tg = ic_tg + X_tepig.reshape(d_full, n).T @ B_tg.reshape(-1)
-mse_tg    = float(np.mean((y - y_pred_tg) ** 2))
+y_pred_tg_train = y_pred_tg_tr
+y_pred_tg_test  = ic_tg + X_tepig[:, :, :, test_idx].reshape(d_full, n_test).T @ B_tg.reshape(-1)
+train_mse_tg = float(np.mean((y[train_idx] - y_pred_tg_train) ** 2))
+test_mse_tg  = float(np.mean((y[test_idx]  - y_pred_tg_test)  ** 2))
 
 results['TEPIG'] = {
-    'lambda': best_lam_tg, 'cv_mse': best_cv_tg, 'mse': mse_tg,
+    'lambda': best_lam_tg, 'cv_mse': best_cv_tg,
+    'train_mse': train_mse_tg, 'test_mse': test_mse_tg,
     'B': B_tg, 'beta_raw': beta_tg_raw, 'beta_l1': beta_tg_l1,
-    'selected': sel_tg, 'selected_idx': sel_idx_tg, 'y_pred': y_pred_tg,
+    'selected': sel_tg, 'selected_idx': sel_idx_tg,
+    'y_pred_train': y_pred_tg_train, 'y_pred_test': y_pred_tg_test,
 }
 print(f"  lambda={best_lam_tg:.2f}  CV-MSE={best_cv_tg:.2f}  "
-      f"MSE={mse_tg:.2f}  features selected={len(sel_tg)}")
+      f"train MSE={train_mse_tg:.2f}  test MSE={test_mse_tg:.2f}  "
+      f"features selected={len(sel_tg)}")
 
 # ── CLUSSO ─────────────────────────────────────────────────────────────────────
 print("\nFitting CLUSSO...")
-a_cl, b_cl, lam_cl, cv_mse_cl, y_pred_cl = clusso_select_and_fit(
-    X_clusso, y, rng, LAM_GRID)
+a_cl, b_cl, lam_cl, cv_mse_cl, y_pred_cl_tr = clusso_select_and_fit(
+    X_clusso[:, :, train_idx], y[train_idx], rng, LAM_GRID)
 
 sel_idx_cl = [j for j in range(q) if abs(b_cl[j]) > 1e-6]
 sel_cl     = [features[j] for j in sel_idx_cl]
 beta_cl_l1 = _l1_normalize(b_cl[sel_idx_cl]) if len(sel_idx_cl) > 0 else np.array([])
-mse_cl     = float(np.mean((y - y_pred_cl) ** 2))
+
+y_pred_cl_test = np.array([a_cl @ X_clusso[:, :, i] @ b_cl for i in test_idx])
+train_mse_cl   = float(np.mean((y[train_idx] - y_pred_cl_tr)   ** 2))
+test_mse_cl    = float(np.mean((y[test_idx]  - y_pred_cl_test) ** 2))
 
 results['clusso'] = {
-    'lambda': lam_cl, 'cv_mse': cv_mse_cl, 'mse': mse_cl,
+    'lambda': lam_cl, 'cv_mse': cv_mse_cl,
+    'train_mse': train_mse_cl, 'test_mse': test_mse_cl,
     'alpha': a_cl, 'beta': b_cl, 'beta_l1': beta_cl_l1,
-    'selected': sel_cl, 'selected_idx': sel_idx_cl, 'y_pred': y_pred_cl,
+    'selected': sel_cl, 'selected_idx': sel_idx_cl,
+    'y_pred_train': y_pred_cl_tr, 'y_pred_test': y_pred_cl_test,
 }
 print(f"  lambda={lam_cl:.2f}  CV-MSE={cv_mse_cl:.2f}  "
-      f"MSE={mse_cl:.2f}  features selected={len(sel_cl)}")
+      f"train MSE={train_mse_cl:.2f}  test MSE={test_mse_cl:.2f}  "
+      f"features selected={len(sel_cl)}")
 print(f"  alpha (cluster weights): {np.round(a_cl, 3)}")
 
 # ── Naive ──────────────────────────────────────────────────────────────────────
 print("\nFitting naive...")
-a_nv, b_nv, lam_nv, cv_mse_nv, y_pred_nv = clusso_select_and_fit(
-    X_naive, y, rng, LAM_GRID)
+cv_mse_nv, b_nv, y_pred_nv_tr, y_pred_nv_te = naive_lasso_fit(
+    X_naive[train_idx], y[train_idx], X_te=X_naive[test_idx])
 
 sel_idx_nv = [j for j in range(q) if abs(b_nv[j]) > 1e-6]
 sel_nv     = [features[j] for j in sel_idx_nv]
 beta_nv_l1 = _l1_normalize(b_nv[sel_idx_nv]) if len(sel_idx_nv) > 0 else np.array([])
-mse_nv     = float(np.mean((y - y_pred_nv) ** 2))
+train_mse_nv = float(np.mean((y[train_idx] - y_pred_nv_tr) ** 2))
+test_mse_nv  = float(np.mean((y[test_idx]  - y_pred_nv_te) ** 2))
 
 results['naive'] = {
-    'lambda': lam_nv, 'cv_mse': cv_mse_nv, 'mse': mse_nv,
-    'alpha': a_nv, 'beta': b_nv, 'beta_l1': beta_nv_l1,
-    'selected': sel_nv, 'selected_idx': sel_idx_nv, 'y_pred': y_pred_nv,
+    'cv_mse': cv_mse_nv,
+    'train_mse': train_mse_nv, 'test_mse': test_mse_nv,
+    'beta': b_nv, 'beta_l1': beta_nv_l1,
+    'selected': sel_nv, 'selected_idx': sel_idx_nv,
+    'y_pred_train': y_pred_nv_tr, 'y_pred_test': y_pred_nv_te,
 }
-print(f"  lambda={lam_nv:.2f}  CV-MSE={cv_mse_nv:.2f}  "
-      f"MSE={mse_nv:.2f}  features selected={len(sel_nv)}")
-print(f"  alpha (cluster weights): {np.round(a_nv, 3)}")
+print(f"  CV-MSE={cv_mse_nv:.2f}  train MSE={train_mse_nv:.2f}  "
+      f"test MSE={test_mse_nv:.2f}  features selected={len(sel_nv)}")
 
 # ── Save results ───────────────────────────────────────────────────────────────
 results['meta'] = {
     'subjects_orig': subjects_orig, 'y_orig': y_orig,
-    'boot_idx': boot_idx, 'n_bootstrap': N_BOOTSTRAP,
+    'n_real_slides': n_real_slides,
+    'boot_idx': boot_idx,
+    'train_idx': train_idx, 'test_idx': test_idx,
     'y': y, 'features': features,
-    'n_orig': n_orig, 'n': n, 'q': q, 'G': G, 'S': S,
+    'n_orig': n_orig, 'n_bootstrap': N_BOOTSTRAP,
+    'n_train': n_train, 'n_test': n_test,
+    'q': q, 'G': G, 'S': S,
     'lam_grid': LAM_GRID.tolist(),
 }
 
@@ -351,29 +414,35 @@ with open(summary_path, 'w') as f:
     f.write("=" * 70 + "\n")
     f.write("REAL DATA ANALYSIS SUMMARY\n")
     f.write("=" * 70 + "\n\n")
-    f.write(f"Original subjects (n_orig) : {n_orig}  (2 real slides, Coimbra only)\n")
+    f.write(f"Original subjects (n_orig) : {n_orig}  "
+            f"(2-slide: {n_two_slide}, 1-slide duplicated: {n_one_slide})\n")
     f.write(f"Bootstrapped subjects (n)  : {n}  (resampled with replacement)\n")
+    f.write(f"Train / Test               : {n_train} / {n_test}  (80/20 split on bootstrapped)\n")
     f.write(f"Features (q)               : {q}\n")
     f.write(f"Outcome                    : eGFR_CKD_EPI_12M (1-year eGFR)\n")
     f.write(f"eGFR  mean={y.mean():.1f}  std={y.std():.1f}  "
             f"min={y.min():.1f}  max={y.max():.1f}\n\n")
 
-    f.write(f"{'Estimator':<10} {'Lambda':>8} {'CV-MSE':>10} {'In-samp MSE':>13} "
-            f"{'N selected':>12}\n")
-    f.write("-" * 55 + "\n")
+    f.write(f"{'Estimator':<10} {'Lambda':>8} {'CV-MSE':>10} "
+            f"{'Train MSE':>11} {'Test MSE':>10} {'N selected':>12}\n")
+    f.write("-" * 65 + "\n")
     for est in ['TEPIG', 'clusso', 'naive']:
         r = results[est]
-        f.write(f"  {est:<8} {r['lambda']:>8.2f} {r['cv_mse']:>10.4f} "
-                f"{r['mse']:>13.4f} {len(r['selected']):>12}\n")
+        lam_str = f"{r['lambda']:>8.2f}" if 'lambda' in r else f"{'N/A':>8}"
+        f.write(f"  {est:<8} {lam_str} {r['cv_mse']:>10.4f} "
+                f"{r['train_mse']:>11.4f} {r['test_mse']:>10.4f} "
+                f"{len(r['selected']):>12}\n")
 
     f.write("\n")
     for est in ['TEPIG', 'clusso', 'naive']:
         r = results[est]
         f.write("-" * 70 + "\n")
         f.write(f"Estimator: {est}\n")
-        f.write(f"  Lambda        : {r['lambda']:.4f}\n")
-        f.write(f"  CV-MSE        : {r['cv_mse']:.4f}\n")
-        f.write(f"  In-sample MSE : {r['mse']:.4f}\n")
+        if 'lambda' in r:
+            f.write(f"  Lambda        : {r['lambda']:.4f}\n")
+        f.write(f"  CV-MSE (train): {r['cv_mse']:.4f}\n")
+        f.write(f"  Train MSE     : {r['train_mse']:.4f}\n")
+        f.write(f"  Test MSE      : {r['test_mse']:.4f}\n")
         if 'alpha' in r:
             f.write(f"  Alpha (cluster weights): {np.round(r['alpha'], 4).tolist()}\n")
         sel  = r['selected']
