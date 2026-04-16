@@ -398,8 +398,10 @@ def run_one_sim(seed):
     # Generate data
     X_tepig, X_true, X_clusso, nonzero_idx, B_true, beta_star = generate_data(rng, n, q)
 
-    # Outcome from true tensor model (uses true population-level X)
-    y_true = np.einsum('gjs,gjsn->n', B_true, X_true)
+    # Outcome from estimated tensor model (uses noisy X_tepig, matching CLUSSO simulation design)
+    # Oracle still uses X_true — but y is generated from X_tepig so the regression is
+    # correctly specified for TEPIG (avoids perfect collinearity through shared weights)
+    y_true = np.einsum('gjs,gjsn->n', B_true, X_tepig)
     y      = y_true + rng.normal(0, SIGMA, n)
 
     results  = {}
