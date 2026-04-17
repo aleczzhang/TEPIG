@@ -16,15 +16,15 @@ __pycache__/
 outputs/data/
 outputs/summaries/
 outputs/results/
-outputs/figures/
 
 # macOS
 .DS_Store
 **/.DS_Store
 
-# PDFs (papers, large files)
+# PDFs, papers (papers, large files)
 *.pdf
-
+Research_Paper_notes/
+Latex/
 # VS Code
 .vscode/
 
