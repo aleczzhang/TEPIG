@@ -145,6 +145,14 @@ def generate_data(rng, n, q):
     """
     Generate synthetic data following CLUSSO Section 4.1 with individual tubules.
 
+    Key design choice (matching CLUSSO paper exactly):
+      - True population-level cluster means mu_i are drawn INDEPENDENTLY per subject i.
+        In CLUSSO Sec 4.1: "Elements of X*_{i,1} were i.i.d drawn from N(2,1), and
+        elements of X*_{i,2} were i.i.d drawn from N(5,3)" — per-subject, not shared.
+      - y is generated from X_true (population-level), NOT from noisy X_tepig.
+        This matches CLUSSO: "y_i = (alpha*)^T X**_i beta* + eps_i".
+      - Oracle uses X_true directly (Full Information oracle, as in CLUSSO's FISL).
+
     Returns
     -------
     X_tepig  : (G, q, S, n)  — per-slide cluster weighted averages for TEPIG
@@ -156,30 +164,32 @@ def generate_data(rng, n, q):
     """
     weight_choices = np.arange(0.2, 0.9, 0.1)
 
-    # Step 1: Draw latent population-level cluster means (one per cluster per slide)
-    # Shape: (G, q, S)
-    mu = np.zeros((G, q, S))
-    mu[0, :, 0] = rng.normal(2.0, 1.0,          q)  # cluster 1, slide 1
-    mu[1, :, 0] = rng.normal(5.0, np.sqrt(3.0), q)  # cluster 2, slide 1
-    mu[0, :, 1] = rng.normal(4.0, np.sqrt(2.0), q)  # cluster 1, slide 2
-    mu[1, :, 1] = rng.normal(8.0, 1.0,          q)  # cluster 2, slide 2
-
-    # Step 2: Randomly sample nonzero feature indices for this rep
+    # Step 1: Randomly sample nonzero feature indices for this rep
     nonzero_idx = rng.choice(q, size=N_NZ, replace=False)
     B_true = np.zeros((G, q, S))
     for j in nonzero_idx:
         B_true[:, j, :] = B_TRUE_BLOCK
     beta_star = np.array([float(B_true[:, j, :].mean()) for j in range(q)])
 
-    # Step 3: Generate per-subject data
+    # Step 2: Generate per-subject data
+    # mu is drawn per-subject (matching CLUSSO Section 4.1: X*_i is i.i.d. per subject).
+    # This ensures features within a (g,s) block are NOT perfectly collinear across subjects.
     X_tepig  = np.zeros((G, q, S, n))
     X_true   = np.zeros((G, q, S, n))  # true population-level weighted averages
     X_clusso = np.zeros((G, q, n))
 
     for i in range(n):
+        # Subject-specific latent cluster means: mu_i ~ same distribution as CLUSSO paper
+        # Extended to S=2 slides with separate mean distributions per slide
+        mu_i = np.zeros((G, q, S))
+        mu_i[0, :, 0] = rng.normal(2.0, 1.0,          q)  # cluster 1, slide 1
+        mu_i[1, :, 0] = rng.normal(5.0, np.sqrt(3.0), q)  # cluster 2, slide 1
+        mu_i[0, :, 1] = rng.normal(4.0, np.sqrt(2.0), q)  # cluster 1, slide 2
+        mu_i[1, :, 1] = rng.normal(8.0, 1.0,          q)  # cluster 2, slide 2
+
         # Store tubules per cluster across slides for CLUSSO pooling
-        clusso_tubules  = {g: [] for g in range(G)}   # list of tubule arrays
-        clusso_n_tubs   = {g: 0  for g in range(G)}   # total tubule count per cluster
+        clusso_tubules  = {g: [] for g in range(G)}
+        clusso_n_tubs   = {g: 0  for g in range(G)}
 
         for s in range(S):
             w = rng.choice(weight_choices)
@@ -193,14 +203,14 @@ def generate_data(rng, n, q):
                 # Number of tubules for this cluster in this slide
                 n_tub = max(1, round(K_is * weights[g]))
 
-                # Draw tubules: each is latent mean + Gaussian noise
-                tubules = rng.normal(mu[g, :, s], SIGMA_R, size=(n_tub, q))
+                # Draw tubules: each is subject's latent mean + Gaussian measurement noise
+                tubules = rng.normal(mu_i[g, :, s], SIGMA_R, size=(n_tub, q))
 
                 # TEPIG: weighted cluster average (estimated from noisy tubules)
                 X_tepig[g, :, s, i] = weights[g] * tubules.mean(axis=0)
 
                 # Oracle: true population-level weighted average (no tubule noise)
-                X_true[g, :, s, i] = weights[g] * mu[g, :, s]
+                X_true[g, :, s, i] = weights[g] * mu_i[g, :, s]
 
                 # Accumulate for CLUSSO mega-slide
                 clusso_tubules[g].append(tubules)
@@ -398,10 +408,11 @@ def run_one_sim(seed):
     # Generate data
     X_tepig, X_true, X_clusso, nonzero_idx, B_true, beta_star = generate_data(rng, n, q)
 
-    # Outcome from estimated tensor model (uses noisy X_tepig, matching CLUSSO simulation design)
-    # Oracle still uses X_true — but y is generated from X_tepig so the regression is
-    # correctly specified for TEPIG (avoids perfect collinearity through shared weights)
-    y_true = np.einsum('gjs,gjsn->n', B_true, X_tepig)
+    # Outcome from true population-level tensor (matches CLUSSO Sec 4.1 exactly):
+    #   y_i = <B_true, X_true_i> + eps_i,  eps_i ~ N(0, sigma^2=1)
+    # X_true uses per-subject mu_i so features are not collinear across subjects.
+    # Oracle MSE will be near sigma^2=1 (irreducible noise), lower than TEPIG/CLUSSO.
+    y_true = np.einsum('gjs,gjsn->n', B_true, X_true)
     y      = y_true + rng.normal(0, SIGMA, n)
 
     results  = {}
