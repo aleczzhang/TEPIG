@@ -228,7 +228,10 @@ def proxgrad_fit(X, y, lam, max_iter=2000, tol=1e-6):
 
 
 def clusso_select_and_fit(X_mat, y, rng, lam_grid):
-    """5-fold CV to select lambda, refit with M_INIT random starts. X_mat: (G, q, n)."""
+    """5-fold CV to select lambda, refit with M_INIT random starts. X_mat: (G, q, n).
+    Mainfunction_albet drops the intercept from returned alpha/beta, so we shift
+    predictions to match mean(y) — matching the intercept correction in simulation_synthetic.py.
+    Returns intercept so it can be applied to held-out test predictions."""
     n_loc = X_mat.shape[2]
     q_loc = X_mat.shape[1]
 
@@ -247,13 +250,16 @@ def clusso_select_and_fit(X_mat, y, rng, lam_grid):
         b0  = rng.uniform(-1, 1, q_loc)
         res = Mainfunction_albet(X_mat, y, a0, b0, best_lam)
         a_, b_ = res['alpha'], res['bet']
-        yp  = np.array([a_ @ X_mat[:, :, i] @ b_ for i in range(n_loc)])
-        mse = float(np.mean((y - yp) ** 2))
+        yp_raw = np.array([a_ @ X_mat[:, :, i] @ b_ for i in range(n_loc)])
+        yp     = yp_raw + (np.mean(y) - np.mean(yp_raw))
+        mse    = float(np.mean((y - yp) ** 2))
         if mse < best_mse:
             best_mse = mse; best_b = b_; best_a = a_
 
-    y_pred = np.array([best_a @ X_mat[:, :, i] @ best_b for i in range(n_loc)])
-    return best_a, best_b, best_lam, best_cv_mse, y_pred
+    y_pred_raw  = np.array([best_a @ X_mat[:, :, i] @ best_b for i in range(n_loc)])
+    intercept   = float(np.mean(y) - np.mean(y_pred_raw))
+    y_pred      = y_pred_raw + intercept
+    return best_a, best_b, best_lam, best_cv_mse, y_pred, intercept
 
 
 def naive_lasso_fit(X_tr, y_tr, X_te=None):
@@ -302,9 +308,13 @@ for lam in LAM_GRID:
     for k in range(5):
         te_cv = folds[k]
         tr_cv = [i for fold in folds for i in fold if fold is not folds[k]]
-        ic, B  = proxgrad_fit(X_tepig[:, :, :, tr_cv], y[tr_cv], lam)
-        ypred  = ic + X_tepig[:, :, :, te_cv].reshape(d_full, len(te_cv)).T @ B.reshape(-1)
-        fold_mse.append(float(np.mean((y[te_cv] - ypred) ** 2)))
+        _, B      = proxgrad_fit(X_tepig[:, :, :, tr_cv], y[tr_cv], lam)
+        X_te      = X_tepig[:, :, :, te_cv]
+        X_te_mean = X_te.mean(axis=3, keepdims=True)
+        y_te_c    = y[te_cv] - y[te_cv].mean()
+        X_te_c    = (X_te - X_te_mean).reshape(d_full, len(te_cv)).T
+        ypred_c   = X_te_c @ B.reshape(-1)
+        fold_mse.append(float(np.mean((y_te_c - ypred_c) ** 2)))
     cv_mse_tg.append(float(np.mean(fold_mse)))
 
 best_lam_tg = LAM_GRID[int(np.argmin(cv_mse_tg))]
@@ -316,8 +326,14 @@ ic_tg, B_tg = proxgrad_fit(X_tepig[:, :, :, train_idx], y[train_idx], best_lam_t
 # Beta for reporting: mean of (G, S) block → (q,) for dimensional comparability
 beta_tg_raw = B_tg.mean(axis=(0, 2))   # (q,)
 
+# Predict using centered approach (matches simulation_synthetic.py / slasso_mse):
+#   center X by training mean, add back training mean of y
+X_tr_mean     = X_tepig[:, :, :, train_idx].mean(axis=3, keepdims=True)  # (G,q,S,1)
+y_tr_mean     = float(np.mean(y[train_idx]))
+y_pred_tg_tr  = (X_tepig[:, :, :, train_idx] - X_tr_mean).reshape(d_full, n_train).T @ B_tg.reshape(-1) + y_tr_mean
+y_pred_tg_test = (X_tepig[:, :, :, test_idx] - X_tr_mean).reshape(d_full, n_test).T @ B_tg.reshape(-1) + y_tr_mean
+
 # Selection: Frobenius norm + adaptive threshold (computed on training residuals)
-y_pred_tg_tr  = ic_tg + X_tepig[:, :, :, train_idx].reshape(d_full, n_train).T @ B_tg.reshape(-1)
 sigma_hat_tg  = float(np.std(y[train_idx] - y_pred_tg_tr, ddof=1))
 tau_tg        = sigma_hat_tg * np.sqrt(2.0 * np.log(q) / n_train)
 block_norms   = np.sqrt(np.sum(B_tg ** 2, axis=(0, 2)))   # (q,)
@@ -329,7 +345,6 @@ beta_tg_sel = beta_tg_raw[sel_idx_tg]
 beta_tg_l1  = _l1_normalize(beta_tg_sel) if len(sel_idx_tg) > 0 else np.array([])
 
 y_pred_tg_train = y_pred_tg_tr
-y_pred_tg_test  = ic_tg + X_tepig[:, :, :, test_idx].reshape(d_full, n_test).T @ B_tg.reshape(-1)
 train_mse_tg = float(np.mean((y[train_idx] - y_pred_tg_train) ** 2))
 test_mse_tg  = float(np.mean((y[test_idx]  - y_pred_tg_test)  ** 2))
 
@@ -346,14 +361,15 @@ print(f"  lambda={best_lam_tg:.2f}  CV-MSE={best_cv_tg:.2f}  "
 
 # ── CLUSSO ─────────────────────────────────────────────────────────────────────
 print("\nFitting CLUSSO...")
-a_cl, b_cl, lam_cl, cv_mse_cl, y_pred_cl_tr = clusso_select_and_fit(
+a_cl, b_cl, lam_cl, cv_mse_cl, y_pred_cl_tr, intercept_cl = clusso_select_and_fit(
     X_clusso[:, :, train_idx], y[train_idx], rng, LAM_GRID)
 
 sel_idx_cl = [j for j in range(q) if abs(b_cl[j]) > 1e-6]
 sel_cl     = [features[j] for j in sel_idx_cl]
 beta_cl_l1 = _l1_normalize(b_cl[sel_idx_cl]) if len(sel_idx_cl) > 0 else np.array([])
 
-y_pred_cl_test = np.array([a_cl @ X_clusso[:, :, i] @ b_cl for i in test_idx])
+y_pred_cl_test_raw = np.array([a_cl @ X_clusso[:, :, i] @ b_cl for i in test_idx])
+y_pred_cl_test     = y_pred_cl_test_raw + intercept_cl
 train_mse_cl   = float(np.mean((y[train_idx] - y_pred_cl_tr)   ** 2))
 test_mse_cl    = float(np.mean((y[test_idx]  - y_pred_cl_test) ** 2))
 
