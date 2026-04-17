@@ -14,7 +14,7 @@ import numpy as np
 import argparse
 
 _parser = argparse.ArgumentParser()
-_parser.add_argument('--folder', default='after_avg',
+_parser.add_argument('--folder', default='threshold_cmp',
                      help='Subfolder under outputs/data/ to read from')
 _args = _parser.parse_args()
 
