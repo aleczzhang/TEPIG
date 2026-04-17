@@ -18,8 +18,10 @@ Data generation (with individual tubules, matching CLUSSO paper):
      Pool tubules from both slides per cluster -> X_clusso_i in R^(G=2, q)  [for CLUSSO]
 
 True model (full tensor, no low-rank):
-    y_i = intercept + <B_true, X_tepig_i> + eps_i,   eps_i ~ N(0, SIGMA)
+    y_i = <B_true, X_true_i> + eps_i,   eps_i ~ N(0, SIGMA)
     B_true[:, j, :] = B_TRUE_BLOCK  for j in nonzero_features (randomly sampled each rep)
+    X_true_i has subject-specific latent cluster means (mu_i drawn i.i.d. per subject,
+    matching CLUSSO Section 4.1)
 
 Estimators:
     tepig         : proximal gradient + group lasso on full (G, q, S, n) tensor  [main method]
@@ -355,12 +357,16 @@ def clusso_select_and_fit(X_mat, y, rng, folds, all_idx):
         b0  = rng.uniform(-1, 1, q)
         res = Mainfunction_albet(X_mat, y, a0, b0, best_lam)
         a_, b_ = res['alpha'], res['bet']
-        yp = np.array([a_ @ X_mat[:, :, i] @ b_ for i in range(n)])
+        yp_raw = np.array([a_ @ X_mat[:, :, i] @ b_ for i in range(n)])
+        # Add intercept: Mainfunction_albet fits with intercept internally (OLS step),
+        # but returns alpha/beta without it. Shift predictions to match mean of y.
+        yp = yp_raw + (np.mean(y) - np.mean(yp_raw))
         mse = float(np.mean((y - yp) ** 2))
         if mse < best_mse:
             best_mse = mse; best_b = b_; best_a = a_
 
-    y_pred = np.array([best_a @ X_mat[:, :, i] @ best_b for i in range(n)])
+    y_pred_raw = np.array([best_a @ X_mat[:, :, i] @ best_b for i in range(n)])
+    y_pred     = y_pred_raw + (np.mean(y) - np.mean(y_pred_raw))
     return best_b, y_pred
 
 
@@ -420,21 +426,31 @@ def run_one_sim(seed):
     folds    = _make_folds(n, rng)
 
     # ── tepig: fit once, apply multiple post-estimation thresholds ───────────
+    # CV and prediction mirror CLUSSO's slasso_mse exactly (tensor extension):
+    #   CV:   center y_test by test-fold mean; center X_test by test-fold mean over subjects
+    #         MSE = mean((y_te_centered - X_te_centered @ B)^2)   [matches slasso_mse lines 22-30]
+    #   Pred: center X by training mean, predict, add back mean(y) [matches clusso_select_and_fit]
     d_full = G * q * S
     cv_mse = []
     for lam in LAM_GRID:
         fold_mse = []
         for k in range(5):
             te = folds[k]; tr = [i for i in all_idx if i not in te]
-            ic, B  = proxgrad_fit(X_tepig[:, :, :, tr], y[tr], lam)
-            ypred  = ic + X_tepig[:, :, :, te].reshape(d_full, len(te)).T @ B.reshape(-1)
-            fold_mse.append(float(np.mean((y[te] - ypred) ** 2)))
+            _, B      = proxgrad_fit(X_tepig[:, :, :, tr], y[tr], lam)
+            X_te      = X_tepig[:, :, :, te]
+            X_te_mean = X_te.mean(axis=3, keepdims=True)          # (G,q,S,1) mean over test subjects
+            y_te_c    = y[te] - y[te].mean()                      # center y by test-fold mean
+            X_te_c    = (X_te - X_te_mean).reshape(d_full, len(te)).T
+            ypred_c   = X_te_c @ B.reshape(-1)
+            fold_mse.append(float(np.mean((y_te_c - ypred_c) ** 2)))
         cv_mse.append(float(np.mean(fold_mse)))
 
-    best_lam  = LAM_GRID[int(np.argmin(cv_mse))]
-    ic_f, B_f = proxgrad_fit(X_tepig, y, best_lam)
-    beta_raw  = B_f.mean(axis=(0, 2))          # raw beta, shape (q,)
-    y_pred_f  = ic_f + X_tepig.reshape(d_full, n).T @ B_f.reshape(-1)
+    best_lam     = LAM_GRID[int(np.argmin(cv_mse))]
+    _, B_f       = proxgrad_fit(X_tepig, y, best_lam)
+    beta_raw     = B_f.mean(axis=(0, 2))                          # raw beta, shape (q,)
+    X_tr_mean    = X_tepig.mean(axis=3, keepdims=True)            # (G,q,S,1) training mean
+    y_pred_raw   = (X_tepig - X_tr_mean).reshape(d_full, n).T @ B_f.reshape(-1)
+    y_pred_f     = y_pred_raw + np.mean(y)                        # add back mean(y)
 
     # Block Frobenius norms — shape (q,). Used for norm-based selection variants.
     block_norms = np.sqrt(np.sum(B_f ** 2, axis=(0, 2)))
