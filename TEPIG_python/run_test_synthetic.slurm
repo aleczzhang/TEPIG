@@ -5,12 +5,12 @@
 #SBATCH --time=02:00:00
 #SBATCH --cpus-per-task=16
 #SBATCH --mem-per-cpu=4096
-#SBATCH --array=0-4
+#SBATCH --array=0-3
 #SBATCH --output=logs/test_%A_%a.out
 
-N_VALUES=(300 500 300 300 900)
-Q_VALUES=(50  50  50  200 50)
-S_VALUES=(0.8 0.8 0.4 0.8 0.8)
+N_VALUES=(300 500 300 300)
+Q_VALUES=(50  50  50  200)
+S_VALUES=(0.8 0.8 0.4 0.8)
 
 N=${N_VALUES[$SLURM_ARRAY_TASK_ID]}
 Q=${Q_VALUES[$SLURM_ARRAY_TASK_ID]}
