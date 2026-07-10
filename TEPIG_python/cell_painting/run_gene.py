@@ -40,7 +40,6 @@ sys.path.insert(0, os.path.join(_HERE, '..'))     # estimator deps in TEPIG_pyth
 
 from sklearn.linear_model import LassoCV                    # noqa: E402
 from Mainfunction_albet import Mainfunction_albet           # noqa: E402
-from SLasso_MSE import lambda_CV_mse                         # noqa: E402
 from genes import CELL_CYCLE                                 # noqa: E402
 
 CACHE_PKL = os.path.join(_HERE, 'cache', 'cp_lincs_tensor.pkl')
@@ -131,25 +130,49 @@ def tepig_lambda_grid(X, y, num=N_LAM_TEPIG):
     return lam_max * np.geomspace(1.0, 1e-3, num)
 
 
-def clusso_select_and_fit(X_mat, y, rng, lam_grid):
-    """5-fold CV to select lambda, refit with M_INIT random starts. X_mat (G,q,n)."""
-    G_loc, q_loc, n_loc = X_mat.shape
-    cv = [lambda_CV_mse(X_mat, y, np.ones(G_loc) / G_loc, np.ones(q_loc) / q_loc, lam)
-          for lam in lam_grid]
+def _clusso_fit_predict(X_full, y, tr, te, lam, a0, b0):
+    """One Mainfunction fit on tr; intercept-corrected test MSE and (alpha, beta)."""
+    res = Mainfunction_albet(X_full[:, :, tr], y[tr], a0, b0, lam)
+    a_, b_ = res['alpha'], res['bet']
+    ptr = np.array([a_ @ X_full[:, :, i] @ b_ for i in tr])
+    ic  = float(y[tr].mean() - ptr.mean())
+    pte = np.array([a_ @ X_full[:, :, i] @ b_ for i in te]) + ic
+    return float(np.mean((y[te] - pte) ** 2)), a_, b_
+
+
+def clusso_select_and_fit(X_full, y, folds, train_idx, rng, lam_grid, n_cv_init=4):
+    """CLUSSO with multiple random restarts in BOTH the CV lambda-selection and
+    the final fit. Its bilinear objective is non-convex, so a single random start
+    can land in a degenerate optimum (all-zero beta -> R^2 ~ 0); taking the best of
+    several restarts per fold stabilizes selection. Uses the same folds as TEPIG."""
+    G_loc, q_loc = X_full.shape[0], X_full.shape[1]
+    cv = []
+    for lam in lam_grid:
+        fmse = []
+        for k in range(len(folds)):
+            te = folds[k]
+            tr = [i for f in folds for i in f if f is not folds[k]]
+            best = np.inf
+            for _ in range(n_cv_init):
+                m, _, _ = _clusso_fit_predict(
+                    X_full, y, tr, te, lam,
+                    rng.dirichlet(np.ones(G_loc)), rng.uniform(-1, 1, q_loc))
+                best = min(best, m)
+            fmse.append(best)
+        cv.append(float(np.mean(fmse)))
     best_lam = lam_grid[int(np.argmin(cv))]
-    best_mse, best_b, best_a = np.inf, np.zeros(q_loc), np.ones(G_loc) / G_loc
+
+    # final refit on the full training set, best of M_INIT restarts (by train MSE)
+    best_tr, best_a, best_b = np.inf, np.ones(G_loc) / G_loc, np.zeros(q_loc)
     for _ in range(M_INIT):
-        res = Mainfunction_albet(X_mat, y, rng.dirichlet(np.ones(G_loc)),
-                                 rng.uniform(-1, 1, q_loc), best_lam)
-        a_, b_ = res['alpha'], res['bet']
-        yp = np.array([a_ @ X_mat[:, :, i] @ b_ for i in range(n_loc)])
-        yp = yp + (np.mean(y) - np.mean(yp))
-        m = float(np.mean((y - yp) ** 2))
-        if m < best_mse:
-            best_mse, best_b, best_a = m, b_, a_
-    yp_raw = np.array([best_a @ X_mat[:, :, i] @ best_b for i in range(n_loc)])
-    ic = float(np.mean(y) - np.mean(yp_raw))
-    return best_a, best_b, best_lam, float(np.min(cv)), yp_raw + ic, ic, cv
+        m, a_, b_ = _clusso_fit_predict(
+            X_full, y, train_idx, train_idx, best_lam,
+            rng.dirichlet(np.ones(G_loc)), rng.uniform(-1, 1, q_loc))
+        if m < best_tr:
+            best_tr, best_a, best_b = m, a_, b_
+    ptr = np.array([best_a @ X_full[:, :, i] @ best_b for i in train_idx])
+    ic  = float(y[train_idx].mean() - ptr.mean())
+    return best_a, best_b, best_lam, float(np.min(cv)), ic, cv
 
 
 def naive_lasso_fit(X_tr, y_tr, X_te):
@@ -275,8 +298,9 @@ def main():
     # ── CLUSSO ───────────────────────────────────────────────────────────────
     print("Fitting CLUSSO...")
     rng = np.random.default_rng(RANDOM_SEED + 2)
-    a_cl, b_cl, lam_cl, cv_cl, pred_cl_tr, ic_cl, cl_curve = clusso_select_and_fit(
-        X_clusso[:, :, train_idx], y[train_idx], rng, CLUSSO_LAM_GRID)
+    a_cl, b_cl, lam_cl, cv_cl, ic_cl, cl_curve = clusso_select_and_fit(
+        X_clusso, y, folds, train_idx, rng, CLUSSO_LAM_GRID)
+    pred_cl_tr = np.array([a_cl @ X_clusso[:, :, i] @ b_cl for i in train_idx]) + ic_cl
     pred_cl_te = np.array([a_cl @ X_clusso[:, :, i] @ b_cl for i in test_idx]) + ic_cl
     sel_cl = [features[j] for j in range(q) if abs(b_cl[j]) > 1e-6]
     results['clusso'] = {
