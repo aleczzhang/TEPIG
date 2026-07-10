@@ -10,6 +10,14 @@ Research_Paper/
 Object_level_data/
 unused_data/
 
+# Cell Painting / LINCS data (large public data, downloaded separately)
+LINCS-Pilot1/
+TEPIG_python/cell_painting/cache/
+TEPIG_python/cell_painting/results/
+
+# Local inspection virtualenv
+.venv_inspect/
+
 # Python cache
 __pycache__/
 *.pyc
