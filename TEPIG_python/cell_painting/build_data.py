@@ -181,17 +181,21 @@ def build():
     print(f"  robustize: dropped {int((~keep).sum())} unstable cores, "
           f"kept q={q}; clipped to +/-{CLIP:g}")
 
+    # Coerce all pandas/pyarrow-backed values to plain Python/numpy types so the
+    # pickle carries no pandas extension dtypes (keeps it portable across pandas
+    # versions on the cluster).
     cache = {
-        'X': X,                                   # (G, q, S, n)
-        'features': cores,                        # feature-cores (q,)
-        'compartments': COMPARTMENTS,
-        'channels': CHANNELS,
-        'obs_compound': merged['pert_id'].values,     # (n,) for grouped split
-        'obs_dose_rank': merged['dose_rank'].values,  # (n,)
-        'expr': merged[probes].values.astype(np.float32),  # (n, 978)
-        'probes': probes,
-        'sym2probe': sym2probe, 'probe2sym': probe2sym,
-        'G': G, 'q': q, 'S': S, 'n': n,
+        'X': np.asarray(X, dtype=np.float32),     # (G, q, S, n)
+        'features': [str(c) for c in cores],      # feature-cores (q,)
+        'compartments': list(COMPARTMENTS),
+        'channels': list(CHANNELS),
+        'obs_compound': np.array([str(x) for x in merged['pert_id']], dtype=object),
+        'obs_dose_rank': np.asarray(merged['dose_rank'], dtype=np.int64),
+        'expr': np.asarray(merged[probes].values, dtype=np.float32),  # (n, 978)
+        'probes': [str(p) for p in probes],
+        'sym2probe': {str(k): str(v) for k, v in sym2probe.items()},
+        'probe2sym': {str(k): str(v) for k, v in probe2sym.items()},
+        'G': int(G), 'q': int(q), 'S': int(S), 'n': int(n),
     }
     with open(CACHE_PKL, 'wb') as f:
         pickle.dump(cache, f)
