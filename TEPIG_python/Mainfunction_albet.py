@@ -116,6 +116,12 @@ def Mainfunction_albet(X_tr, Y_tr, alpha, bet, lam):
         if np.max(np.abs(alpha)) > 0:
             sig_al = np.sign(alpha[np.argmax(np.abs(alpha))])
             alpha  = sig_al * alpha / np.sum(np.abs(alpha))
+            # The fit depends only on the product alpha' X bet, which is invariant
+            # to flipping BOTH signs: (-alpha)' X (-bet) == alpha' X bet. The sign
+            # convention above may flip alpha; beta must be flipped with it, or the
+            # prediction is negated. (No-op when sig_al = +1, e.g. the Coimbra data,
+            # where alpha is positive -- which is why this never surfaced there.)
+            bet    = sig_al * bet
 
         dif = float(np.linalg.norm(K_prdu(bet, alpha) - K_prdu(bet0, alpha0)))
 
