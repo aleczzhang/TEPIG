@@ -14,6 +14,14 @@ unused_data/
 LINCS-Pilot1/
 TEPIG_python/cell_painting/cache/
 TEPIG_python/cell_painting/results/
+TEPIG_python/cell_painting/logs/
+TEPIG_python/cell_painting/figures/
+# data/ holds big downloads (sqlites, platemaps) -- but keep the small
+# provenance CSVs that the pipeline and papers depend on
+TEPIG_python/cell_painting/data/*
+!TEPIG_python/cell_painting/data/platemap_l1000_coverage.csv
+!TEPIG_python/cell_painting/data/random_plate_sample.csv
+!TEPIG_python/cell_painting/data/confirm_shortlist.csv
 
 # Local inspection virtualenv
 .venv_inspect/
@@ -26,6 +34,7 @@ __pycache__/
 outputs/data/
 outputs/summaries/
 outputs/results/
+outputs/figures/
 
 # macOS
 .DS_Store
