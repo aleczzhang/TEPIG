@@ -1,0 +1,45 @@
+# Frozen 2026-09-07 BEFORE any model touched cache/cdrp_confirm4.pkl
+# (plates 26128 26138 25593 24301). Source: all-978-gene ridge+lasso scan on the
+# ORIGINAL 4 plates (24277 26724 26071 26058) only; tier = best-of-either R2 > 0.10,
+# plus structure candidates from the oracle ridge_struct comparison.
+gene,r2_ridge,r2_lasso,r2_best,reason
+HERPUD1,0.3227,0.2291,0.3227,scan_top_tier
+PSRC1,0.1619,0.2899,0.2899,scan_top_tier
+FOS,0.1227,0.2474,0.2474,scan_top_tier
+DDIT4,0.2290,0.2421,0.2421,scan_top_tier
+TSC22D3,0.2236,0.1011,0.2236,scan_top_tier
+KIF20A,0.1472,0.1994,0.1994,scan_top_tier
+CELLCYCLE,0.0682,0.1987,0.1987,scan_top_tier
+HMGCS1,0.0510,0.1915,0.1915,scan_top_tier
+GADD45B,0.0875,0.1914,0.1914,scan_top_tier
+RGS2,0.0691,0.1907,0.1907,scan_top_tier
+GLRX,0.1894,0.1798,0.1894,scan_top_tier
+KLK8,0.1607,0.1873,0.1873,scan_top_tier
+IER3,0.1748,0.0189,0.1748,scan_top_tier
+ARHGEF2,0.1742,0.0089,0.1742,scan_top_tier
+BHLHE40,0.0990,0.1733,0.1733,scan_top_tier
+CCNA2,-0.0437,0.1678,0.1678,scan_top_tier
+DYRK3,0.1279,0.1653,0.1653,scan_top_tier
+CCNB2,0.1527,0.1639,0.1639,scan_top_tier
+BUB1B,0.0965,0.1610,0.1610,scan_top_tier
+RELB,-0.0691,0.1567,0.1567,scan_top_tier
+CCNF,0.1058,0.1475,0.1475,scan_top_tier
+NFIL3,0.1457,0.1379,0.1457,scan_top_tier
+TOP2A,0.0827,0.1455,0.1455,scan_top_tier
+HOXA10,0.0396,0.1423,0.1423,scan_top_tier
+CHIC2,0.1414,0.0793,0.1414,scan_top_tier
+CDKN1A,-0.0413,0.1318,0.1318,scan_top_tier
+MYC,0.1316,-0.0038,0.1316,scan_top_tier
+BIRC5,0.0958,0.1301,0.1301,scan_top_tier
+UGDH,0.0555,0.1298,0.1298,scan_top_tier
+XBP1,0.1294,0.1181,0.1294,scan_top_tier
+KLHL21,0.1189,0.0979,0.1189,scan_top_tier
+FHL2,0.1188,0.0422,0.1188,scan_top_tier
+EPHA2,0.0323,0.1143,0.1143,scan_top_tier
+C2CD5,0.0653,0.1126,0.1126,scan_top_tier
+NPC1,0.0765,0.1113,0.1113,scan_top_tier
+KIF2C,-0.0381,0.1098,0.1098,scan_top_tier
+NUSAP1,0.0832,0.1066,0.1066,scan_top_tier
+DUSP14,0.0619,0.1054,0.1054,scan_top_tier
+HYOU1,0.1044,0.0213,0.1044,scan_top_tier
+COQ3,0.0686,0.1024,0.1024,scan_top_tier
