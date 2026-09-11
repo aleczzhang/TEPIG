@@ -20,7 +20,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patheffects as pe
 
 _HERE   = os.path.dirname(os.path.abspath(__file__))
-_BASE   = os.path.join(_HERE, '..', 'outputs')
+_BASE   = os.path.join(_HERE, '..', '..', 'outputs')
 OUT_RES = os.path.join(_BASE, 'results')
 OUT_FIG = os.path.join(_BASE, 'figures')
 os.makedirs(OUT_FIG, exist_ok=True)

@@ -39,11 +39,13 @@ import numpy as np
 from joblib import Parallel, delayed
 
 # Allow importing CLUSSO_python utilities from sibling directory
+# shared estimator modules (Mainfunction_albet, SLasso_MSE, utils) live in ../core
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'core'))
 from Mainfunction_albet import Mainfunction_albet, _glmnet_lasso
 from SLasso_MSE import lambda_CV_mse
 
 # ── Config ─────────────────────────────────────────────────────────────────────
-_BASE    = os.path.join(os.path.dirname(__file__), '..', 'outputs')
+_BASE    = os.path.join(os.path.dirname(__file__), '..', '..', 'outputs')
 OUT_REF  = os.path.join(_BASE, 'reference')
 OUT_DATA = os.path.join(_BASE, 'data')
 OUT_SUMM = os.path.join(_BASE, 'summaries')

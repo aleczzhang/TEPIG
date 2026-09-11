@@ -9,7 +9,7 @@ warnings.filterwarnings('ignore')  # suppress overflow/NaN warnings from near-ze
 
 
 # ── Load data (same setup as simulation.py) ────────────────────────────────
-_BASE    = os.path.join(os.path.dirname(__file__), '..', 'outputs')
+_BASE    = os.path.join(os.path.dirname(__file__), '..', '..', 'outputs')
 OUT_REF  = os.path.join(_BASE, 'reference')
 OUT_DATA = os.path.join(_BASE, 'data')
 OUT_SUMM = os.path.join(_BASE, 'results')

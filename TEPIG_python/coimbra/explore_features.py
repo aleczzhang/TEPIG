@@ -19,18 +19,21 @@ match Renal_Data.csv within 0.5%; all-tubule averages differ by ~8.6%.
 """
 
 import os
+import sys
 import numpy as np
 import matplotlib.pyplot as plt
+# shared estimator modules (Mainfunction_albet, SLasso_MSE, utils) live in ../core
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'core'))
 from utils import load_tubule_data, build_naive_average, prune_correlated_features
 
 # ── Config ────────────────────────────────────────────────────────────────────
 _HERE       = os.path.dirname(os.path.abspath(__file__))
-BASE        = os.path.join(_HERE, '..', 'Object_level_data', 'Donors_included_after_biopsy_QCed')
+BASE        = os.path.join(_HERE, '..', '..', 'Object_level_data', 'Donors_included_after_biopsy_QCed')
 CORR_THRESH = 0.95   # greedily remove one feature from each pair above this
 CAND_THRESH = 0.80   # candidate beta_star features: max |corr| with any other < this
 N_TOP       = 10     # show pairwise correlations among the N most independent features
 DROP_COLS   = ['compartment_id', 'In Medulla']
-_BASE    = os.path.join(_HERE, '..', 'outputs')
+_BASE    = os.path.join(_HERE, '..', '..', 'outputs')
 OUT_REF  = os.path.join(_BASE, 'reference')
 OUT_SUMM = os.path.join(_BASE, 'summaries')
 

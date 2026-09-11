@@ -18,7 +18,7 @@ _parser.add_argument('--folder', default='threshold_cmp',
                      help='Subfolder under outputs/data/ to read from')
 _args = _parser.parse_args()
 
-_BASE    = os.path.join(os.path.dirname(__file__), '..', 'outputs')
+_BASE    = os.path.join(os.path.dirname(__file__), '..', '..', 'outputs')
 OUT_DATA = os.path.join(_BASE, 'data', _args.folder)
 OUT_SUMM = os.path.join(_BASE, 'summaries', _args.folder)
 os.makedirs(OUT_SUMM, exist_ok=True)

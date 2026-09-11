@@ -11,4 +11,4 @@ module load gcc/11.3.0
 module load python/3.10.10/gcc
 
 cd /home/azzhang/scratch.staraptor-lab/TEPIG/TEPIG_python
-python gmm_clustering.py
+python coimbra/gmm_clustering.py

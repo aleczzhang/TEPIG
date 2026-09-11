@@ -33,16 +33,18 @@ import pandas as pd
 warnings.filterwarnings('ignore')
 
 from sklearn.linear_model import LassoCV
+# shared estimator modules (Mainfunction_albet, SLasso_MSE, utils) live in ../core
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'core'))
 from Mainfunction_albet import Mainfunction_albet, _glmnet_lasso
 from SLasso_MSE import lambda_CV_mse
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
 _HERE    = os.path.dirname(os.path.abspath(__file__))
-_BASE    = os.path.join(_HERE, '..', 'outputs')
+_BASE    = os.path.join(_HERE, '..', '..', 'outputs')
 OUT_DATA = os.path.join(_BASE, 'data')
 OUT_REF  = os.path.join(_BASE, 'reference')
 OUT_RES  = os.path.join(_BASE, 'results')
-COIMBRA  = os.path.join(_HERE, '..', 'Object_level_data',
+COIMBRA  = os.path.join(_HERE, '..', '..', 'Object_level_data',
                         'Donors_included_after_biopsy_QCed',
                         'coimbra_clinical_outcomes.csv')
 os.makedirs(OUT_RES, exist_ok=True)

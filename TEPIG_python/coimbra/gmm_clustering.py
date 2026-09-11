@@ -31,16 +31,19 @@ Outputs saved to outputs/ (relative to repo root):
 """
 
 import os
+import sys
 import pickle
 import numpy as np
 from collections import defaultdict
 from sklearn.mixture import GaussianMixture
+# shared estimator modules (Mainfunction_albet, SLasso_MSE, utils) live in ../core
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'core'))
 from utils import load_tubule_data, build_naive_average, prune_correlated_features, get_subject
 
 # ── Config ─────────────────────────────────────────────────────────────────────
 _HERE       = os.path.dirname(os.path.abspath(__file__))
-BASE        = os.path.join(_HERE, '..', 'Object_level_data', 'Donors_included_after_biopsy_QCed')
-_BASE    = os.path.join(_HERE, '..', 'outputs')
+BASE        = os.path.join(_HERE, '..', '..', 'Object_level_data', 'Donors_included_after_biopsy_QCed')
+_BASE    = os.path.join(_HERE, '..', '..', 'outputs')
 OUT_REF  = os.path.join(_BASE, 'reference')
 OUT_DATA = os.path.join(_BASE, 'data')
 OUT_SUMM = os.path.join(_BASE, 'summaries')

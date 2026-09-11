@@ -29,4 +29,4 @@ module load gcc/11.3.0
 module load python/3.10.10/gcc
 
 cd /home/azzhang/scratch.staraptor-lab/TEPIG/TEPIG_python
-python simulation_synthetic.py --n $N --q $Q --sparsity $SP
+python simulation/simulation_synthetic.py --n $N --q $Q --sparsity $SP

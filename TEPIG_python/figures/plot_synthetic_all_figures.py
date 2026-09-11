@@ -1,32 +1,38 @@
 """
-plot_synthetic.py
------------------
-Generates line graphs from simulation_synthetic pkl results,
-matching the CLUSSO paper figure style.
+plot_synthetic_full.py
+----------------------
+Generates comprehensive line graphs from simulation_synthetic pkl results.
 
-Produces 4 figures (one per metric), each with a 2x5 subplot grid:
+Produces 4 figures (one per metric: FPR, TPR, L1 bias, MSE),
+each with a 2x5 subplot grid:
   rows = sparsity (0.4, 0.8)
   cols = q (10, 50, 100, 150, 200)
   x-axis = n
 
 Usage:
-    python plot_synthetic.py
+    python plot_synthetic_full.py [--folder threshold_cmp]
 """
 
 import os
 import pickle
+import argparse
 import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-_BASE    = os.path.join(os.path.dirname(__file__), '..', 'outputs')
-OUT_DATA = os.path.join(_BASE, 'data', 'threshold_cmp')
-OUT_FIG  = os.path.join(_BASE, 'figures')
+_parser = argparse.ArgumentParser()
+_parser.add_argument('--folder', default='threshold_cmp',
+                     help='Subfolder under outputs/data/ to read from')
+_args = _parser.parse_args()
+
+_BASE    = os.path.join(os.path.dirname(__file__), '..', '..', 'outputs')
+OUT_DATA = os.path.join(_BASE, 'data', _args.folder)
+OUT_FIG  = os.path.join(_BASE, 'figures', _args.folder + '_full')
 os.makedirs(OUT_FIG, exist_ok=True)
 
 N_VALUES = [300, 500, 700, 900, 1100, 1500, 2000]
-Q_VALUES = [50, 100, 200]
+Q_VALUES = [10, 50, 100, 150, 200]
 S_VALUES = [0.4, 0.8]
 
 ESTIMATORS = [
@@ -38,8 +44,14 @@ ESTIMATORS = [
 
 # (key, label, log_scale, aggregation)
 METRICS = [
-    ('fpr', 'FPR (median)',  False, 'median'),
-    ('mse', 'MSE (median)',  True,  'median'),
+    ('fpr', 'FPR (mean)',        False, 'mean'),
+    ('fpr', 'FPR (median)',      False, 'median'),
+    ('tpr', 'TPR (mean)',        False, 'mean'),
+    ('tpr', 'TPR (median)',      False, 'median'),
+    ('l1',  'L1 Bias (mean)',    False, 'mean'),
+    ('l1',  'L1 Bias (median)',  False, 'median'),
+    ('mse', 'MSE (mean)',        True,  'mean'),
+    ('mse', 'MSE (median)',      True,  'median'),
 ]
 
 # ── Load all results ────────────────────────────────────────────────────────────
@@ -67,8 +79,8 @@ else:
 # ── Plot ────────────────────────────────────────────────────────────────────────
 for metric_key, metric_label, use_log, agg_fn in METRICS:
     fig, axes = plt.subplots(
-        nrows=2, ncols=3,
-        figsize=(10.5, 5.5),
+        nrows=2, ncols=5,
+        figsize=(14, 5.5),
         constrained_layout=False,
     )
 
@@ -105,13 +117,13 @@ for metric_key, metric_label, use_log, agg_fn in METRICS:
             elif metric_key in ('tpr', 'fpr'):
                 ax.set_ylim([-0.05, 1.05])
 
-            ax.set_title(f'q = {q}, $\\mathrm{{s}}_{{\\beta^*}}$ = {sparsity}', fontsize=8.5)
-            ax.set_xlabel('n', fontsize=8)
-            ax.set_ylabel(metric_label, fontsize=8)
-            ax.tick_params(labelsize=7)
+            ax.set_title(f'q={q}, s={sparsity}', fontsize=8)
+            ax.set_xlabel('n', fontsize=7.5)
+            ax.set_ylabel(metric_label, fontsize=7.5)
+            ax.tick_params(labelsize=6.5)
             ax.set_xticks(N_VALUES)
             ax.set_xticklabels([str(n) for n in N_VALUES],
-                               rotation=40, ha='right', fontsize=6.5)
+                               rotation=40, ha='right', fontsize=6)
 
     # Shared legend outside, bottom center
     handles, labels = axes[0, 0].get_legend_handles_labels()
@@ -125,13 +137,13 @@ for metric_key, metric_label, use_log, agg_fn in METRICS:
                bbox_to_anchor=(0.5, 0.0))
 
     plt.subplots_adjust(
-        top=0.95, bottom=0.16,
-        left=0.07, right=0.99,
-        hspace=0.55, wspace=0.40,
+        top=0.93, bottom=0.18,
+        left=0.05, right=0.99,
+        hspace=0.60, wspace=0.38,
     )
 
     safe_label = metric_label.replace(' ', '_').replace('(', '').replace(')', '')
-    out_path = os.path.join(OUT_FIG, f'simulation_synthetic_{safe_label}.png')
+    out_path = os.path.join(OUT_FIG, f'simulation_synthetic_full_{safe_label}.png')
     fig.savefig(out_path, dpi=150, bbox_inches='tight')
     plt.close(fig)
     print(f"  Saved: {out_path}")
