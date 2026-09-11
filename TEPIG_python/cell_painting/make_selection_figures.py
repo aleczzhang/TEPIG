@@ -136,7 +136,7 @@ def fig5(d):
 def fig6():
     """Block norms piled at the cutoff — why a single run is unstable."""
     import sys
-    sys.path.insert(0, os.path.join(_HERE, '..')); sys.path.insert(0, _HERE)
+    sys.path.insert(0, os.path.join(_HERE, '..', 'core')); sys.path.insert(0, _HERE)
     import run_gene as R
     c = pickle.load(open(os.path.join(_HERE, 'cache', 'cp_lincs_tensor.pkl'), 'rb'))
     m = c['obs_dose_rank'] == DOSE

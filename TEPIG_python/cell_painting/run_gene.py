@@ -36,7 +36,7 @@ import numpy as np
 warnings.filterwarnings('ignore')
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(_HERE, '..'))     # estimator deps in TEPIG_python
+sys.path.insert(0, os.path.join(_HERE, '..', 'core'))     # estimator deps in TEPIG_python/core
 
 from sklearn.linear_model import LassoCV                    # noqa: E402
 from Mainfunction_albet import Mainfunction_albet           # noqa: E402
@@ -186,7 +186,7 @@ def naive_lasso_fit(X_tr, y_tr, X_te):
     y_mu    = y_tr.mean(); y_c = y_tr - y_mu
     lam_max = float(np.max(np.abs(X_std.T @ y_c)) / n_loc)
     lambdas = np.exp(np.linspace(np.log(lam_max), np.log(lam_max * 1e-4), 100))
-    model = LassoCV(cv=5, alphas=lambdas / 2.0, fit_intercept=False, max_iter=100_000)
+    model = LassoCV(cv=5, alphas=lambdas / 2.0, fit_intercept=False, max_iter=10_000)
     model.fit(X_std, y_c)
     beta = model.coef_ / X_scale
     ic   = float(y_mu - X_mu @ beta)

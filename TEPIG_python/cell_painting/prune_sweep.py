@@ -32,7 +32,7 @@ import pickle
 warnings.filterwarnings('ignore')
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(_HERE, '..'))
+sys.path.insert(0, os.path.join(_HERE, '..', 'core'))
 sys.path.insert(0, _HERE)
 
 import run_gene as R                                     # noqa: E402
@@ -46,20 +46,29 @@ THRESHOLDS = [0.99, 0.95, 0.90, 0.85, 0.80]
 def prune_correlated(Rabs, thresh):
     """Greedily drop features until max pairwise |r| <= thresh.
     At each step take the most-correlated surviving pair and remove whichever
-    has the higher mean |r| to the other survivors. Returns kept indices."""
-    R = Rabs.copy()
+    has the higher mean |r| to the other survivors. Returns kept indices.
+
+    Dead features are masked to 0 in place rather than rebuilt with np.ix_ each
+    step, so the cost is one O(q^2) argmax per removal instead of an O(q^2) copy
+    -- identical result, but usable at q in the thousands (Cell Painting), not
+    just the dozens (channel-averaged LINCS)."""
+    R = np.array(Rabs, dtype=float, copy=True)
     np.fill_diagonal(R, 0.0)
-    keep = list(range(R.shape[0]))
-    while len(keep) > 1:
-        sub = R[np.ix_(keep, keep)]
-        mx = sub.max()
-        if mx <= thresh:
+    n = R.shape[0]
+    alive = np.ones(n, dtype=bool)
+    n_alive = n
+    while n_alive > 1:
+        idx = int(np.argmax(R))          # dead rows/cols are 0, never win
+        i, j = divmod(idx, n)
+        if R[i, j] <= thresh:
             break
-        i, j = np.unravel_index(sub.argmax(), sub.shape)
         # drop the more "central" of the pair (higher average correlation)
-        drop = keep[i] if sub[i].mean() >= sub[j].mean() else keep[j]
-        keep.remove(drop)
-    return sorted(keep)
+        drop = i if R[i, alive].mean() >= R[j, alive].mean() else j
+        R[drop, :] = 0.0
+        R[:, drop] = 0.0
+        alive[drop] = False
+        n_alive -= 1
+    return sorted(np.where(alive)[0].tolist())
 
 
 def main():

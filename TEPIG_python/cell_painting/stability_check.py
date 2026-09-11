@@ -29,10 +29,11 @@ import pickle
 warnings.filterwarnings('ignore')
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(_HERE, '..'))
+sys.path.insert(0, os.path.join(_HERE, '..', 'core'))
 sys.path.insert(0, _HERE)
 
 import run_gene as R                                            # noqa: E402
+from compute_log import log_compute                             # noqa: E402
 
 CACHE = os.path.join(_HERE, 'cache', 'cp_lincs_tensor.pkl')
 METHODS = ['TEPIG', 'clusso', 'naive']
@@ -43,11 +44,34 @@ def jaccard(a, b):
     return len(a & b) / len(a | b) if (a | b) else 1.0
 
 
-def one_seed(X, y_raw, seed):
-    """Fit all three methods with a given seed; return metrics + selected sets."""
+def one_seed(X, y_raw, seed, log=True, screen=None):
+    """Fit all three methods with a given seed; return metrics + selected sets.
+    Each method's wall time is appended to results/compute_log.csv (label
+    'fit_seed', extras method/q/n) so compute_plan.py can size the multi-plate run.
+
+    screen: optional SUPERVISED pre-screen f(Xn_train, y_train) -> kept feature
+    indices (see preselect.py). It is applied to the training wells only, so the
+    test wells never inform which features enter the fit. Selected indices are
+    reported in the ORIGINAL feature index space; out['keep'] is the screened set."""
+    import time
     n = X.shape[3]
-    G, q, S = X.shape[0], X.shape[1], X.shape[2]
     tr, te = R.plain_split(n, R.TEST_FRAC, seed)
+    _t = time.time()
+    keep = None
+    if screen is not None:
+        Xn = X.mean(axis=(0, 2)).T
+        keep = np.asarray(screen(Xn[tr], np.asarray(y_raw, float)[tr]))
+        X = X[:, keep, :, :]
+        if log:
+            log_compute('screen', time.time() - _t, method=screen.method,
+                        q_out=len(keep), q_in=Xn.shape[1], n_train=len(tr), seed=seed)
+        _t = time.time()
+    G, q, S = X.shape[0], X.shape[1], X.shape[2]
+    def _log(method):
+        nonlocal _t
+        if log:
+            log_compute('fit_seed', time.time() - _t, method=method, q=q, n=n, seed=seed)
+        _t = time.time()
     ymu, ysd = y_raw[tr].mean(), y_raw[tr].std()
     y = (y_raw - ymu) / (ysd if ysd > 0 else 1.0)
     folds = R.plain_folds(tr, seed + 1)
@@ -79,6 +103,7 @@ def one_seed(X, y_raw, seed):
     bn = np.sqrt((B ** 2).sum(axis=(0, 2)))
     out['TEPIG'] = (float(np.mean((y[te] - pte) ** 2)), R.r2(y[te], pte),
                     [j for j in range(q) if bn[j] > tau])
+    _log('TEPIG')
 
     # ── CLUSSO ───────────────────────────────────────────────────────────────
     Xcl = X.mean(axis=2)
@@ -88,12 +113,18 @@ def one_seed(X, y_raw, seed):
     pte = np.array([a @ Xcl[:, :, i] @ b for i in te]) + ic
     out['clusso'] = (float(np.mean((y[te] - pte) ** 2)), R.r2(y[te], pte),
                      [j for j in range(q) if abs(b[j]) > 1e-6])
+    _log('clusso')
 
     # ── naive ────────────────────────────────────────────────────────────────
     Xnv = X.mean(axis=(0, 2)).T
     _, bnv, _, pte = R.naive_lasso_fit(Xnv[tr], y[tr], Xnv[te])
     out['naive'] = (float(np.mean((y[te] - pte) ** 2)), R.r2(y[te], pte),
                     [j for j in range(q) if abs(bnv[j]) > 1e-6])
+    _log('naive')
+    if keep is not None:                       # map back to original feature indices
+        for m in METHODS:
+            out[m] = (out[m][0], out[m][1], [int(keep[j]) for j in out[m][2]])
+        out['keep'] = [int(j) for j in keep]
     return out
 
 
