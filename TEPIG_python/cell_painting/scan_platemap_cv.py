@@ -14,7 +14,7 @@ fold, all genes at once) or --model lasso (per-gene LassoCV; run with
 plate == grouping by platemap.
 
 Usage:  python scan_platemap_cv.py [--model ridge|lasso] [--preselect none|pycytominer]
-Writes results/gene_scan_pmcv_<model>.csv (gene, r2_median, r2_mean, r2_min, r2_max).
+Writes results/gene_scan_pmcv_<model>_<caches>.csv (gene, r2_median, r2_mean, r2_min, r2_max).
 """
 import argparse, os, pickle, time
 
@@ -84,6 +84,7 @@ def main():
     print(f'platemap-CV scan: {len(genes)} genes, n={len(Y)} wells, q={Xn.shape[1]}, '
           f'{len(folds)} leave-one-platemap-out folds', flush=True)
 
+    tag = '_'.join(os.path.splitext(c)[0] for c in a.caches)
     scan = ridge_scan_split if a.model == 'ridge' else lasso_scan_split
     r2 = np.full((len(folds), len(genes)), np.nan)
     for fi, p in enumerate(folds):
@@ -98,12 +99,12 @@ def main():
         Yte = Y[te]
         ss = ((Yte - Yte.mean(axis=0)) ** 2).sum(axis=0)
         r2[fi] = 1.0 - ((Yte - yhat) ** 2).sum(axis=0) / np.where(ss > 0, ss, np.nan)
-        np.save(os.path.join(_HERE, 'results', f'gene_scan_pmcv_{a.model}_partial.npy'), r2)
+        np.save(os.path.join(_HERE, 'results', f'gene_scan_pmcv_{a.model}_{tag}_partial.npy'), r2)
         print(f'  fold {fi + 1}/{len(folds)} (hold out {p}): {time.time() - t:.1f}s', flush=True)
 
     med = np.median(r2, axis=0)
     order = np.argsort(-med)
-    out = os.path.join(_HERE, 'results', f'gene_scan_pmcv_{a.model}.csv')
+    out = os.path.join(_HERE, 'results', f'gene_scan_pmcv_{a.model}_{tag}.csv')
     with open(out, 'w') as f:
         f.write('gene,r2_median,r2_mean,r2_min,r2_max\n')
         for i in order:

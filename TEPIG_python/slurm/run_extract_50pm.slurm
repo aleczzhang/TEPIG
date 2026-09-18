@@ -3,8 +3,16 @@
 #SBATCH --account=staraptor-lab-aac
 #SBATCH --partition=standard
 #SBATCH --time=12:00:00
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=64G
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=24G
+#SBATCH --requeue
+
+# SU note: charged max(cores, mem_GiB/4) x hours = 6 SU/h here, by ACTUAL walltime
+# (~6-8 h expected -> ~40-50 SU). If the allocation is still the 80 SU starter, try
+# the free preemptible queue instead (no SU charge; --reuse-parked makes requeues
+# cheap since finished plates are skipped):
+#   sbatch --partition=scavenger --qos=scavenger TEPIG_python/slurm/run_extract_50pm.slurm
+# (check partition names with `sinfo -s` -- scavenger naming varies)
 
 # Extract ONE randomly-sampled plate from each of the 50 fully-L1000-covered
 # platemaps (data/random_plate_sample.csv, numpy seed 2026) into a single cache
