@@ -50,9 +50,10 @@ def log_compute(label, wall_s, **extras):
     with open(LOG, 'a') as f:
         if new:
             f.write('timestamp,host,script,label,wall_s,peak_rss_gb,extras\n')
+        extras_csv = json.dumps(extras, default=str).replace('"', '""')
         f.write(f"{time.strftime('%Y-%m-%dT%H:%M:%S')},{host()},{script},{label},"
                 f"{wall_s:.2f},{peak_rss_gb():.3f},"
-                f"\"{json.dumps(extras, default=str).replace('\"', '\"\"')}\"\n")
+                f'"{extras_csv}"\n')
     el = int(time.time() - _T0)
     print(f"[{el // 60:02d}:{el % 60:02d}] {label}: {wall_s:.1f}s  "
           f"peak RSS {peak_rss_gb():.2f} GB  {extras if extras else ''}", flush=True)
