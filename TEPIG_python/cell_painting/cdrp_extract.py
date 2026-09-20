@@ -619,14 +619,20 @@ def main():
         print(f"  wells matched to an L1000 profile: {matched}/{n}")
 
     idmap_path = os.path.join(_HERE, '..', '..', 'LINCS-Pilot1', 'idmap.xlsx')
+    idmap_csv = os.path.join(_HERE, 'data', 'l1k_idmap.csv')   # committed fallback
     sym2probe = {}
     if os.path.exists(idmap_path):
+        idmap = pd.read_excel(idmap_path)
+    elif os.path.exists(idmap_csv):
+        idmap = pd.read_csv(idmap_csv)
+    else:
+        idmap = None
+        print("  (no idmap found; pass a probe id as --gene instead of a symbol)")
+    if idmap is not None:
         pset = set(genes)
-        for _, r in pd.read_excel(idmap_path).iterrows():
+        for _, r in idmap.iterrows():
             if r['probe_id'] in pset and isinstance(r['symbol'], str):
                 sym2probe.setdefault(r['symbol'], r['probe_id'])
-    else:
-        print("  (idmap.xlsx not found; pass a probe id as --gene instead of a symbol)")
     print(f"  gene symbols mapped to probes: {len(sym2probe)}")
 
     cache = {

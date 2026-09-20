@@ -22,6 +22,7 @@ TEPIG_python/cell_painting/data/*
 !TEPIG_python/cell_painting/data/platemap_l1000_coverage.csv
 !TEPIG_python/cell_painting/data/random_plate_sample.csv
 !TEPIG_python/cell_painting/data/confirm_shortlist.csv
+!TEPIG_python/cell_painting/data/l1k_idmap.csv
 
 # Local inspection virtualenv
 .venv_inspect/
