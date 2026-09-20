@@ -44,8 +44,9 @@ def load_merged(caches=CACHES):
         ok = np.isfinite(Y).all(axis=1)
         return (Xn[ok], Y[ok], np.array(list(c['obs_plate']))[ok],
                 [str(f) for f in c['features']], genes + ['CELLCYCLE'])
+    sets = [{str(g) for g in c['features']} for c in cs[1:]]
     shared = [f for f in map(str, cs[0]['features'])
-              if f in {str(g) for g in cs[1]['features']}]
+              if all(f in s for s in sets)]
     Xs, Ys, plates = [], [], []
     genes = sorted(cs[0]['sym2probe'])
     for c in cs:
@@ -71,6 +72,11 @@ def main():
     ap.add_argument('--preselect', default='none', choices=['none', 'pycytominer'])
     ap.add_argument('--caches', nargs='+', default=CACHES,
                     help='cache pkl(s) in cache/; e.g. --caches cdrp_50pm.pkl')
+    ap.add_argument('--fold', type=int, default=None,
+                    help='run ONLY this fold index (0-based; for slurm arrays), '
+                         'saving results/..._fold<i>.npy and exiting')
+    ap.add_argument('--combine', action='store_true',
+                    help='assemble per-fold npy files from --fold runs into the CSV')
     a = ap.parse_args()
     t0 = time.time()
 
@@ -85,22 +91,46 @@ def main():
           f'{len(folds)} leave-one-platemap-out folds', flush=True)
 
     tag = '_'.join(os.path.splitext(c)[0] for c in a.caches)
+    if len(a.caches) > 3:                       # keep filenames sane for many caches
+        tag = f'{os.path.splitext(a.caches[0])[0]}_x{len(a.caches)}'
+    fold_path = lambda fi: os.path.join(
+        _HERE, 'results', f'gene_scan_pmcv_{a.model}_{tag}_fold{fi:02d}.npy')
     scan = ridge_scan_split if a.model == 'ridge' else lasso_scan_split
-    r2 = np.full((len(folds), len(genes)), np.nan)
-    for fi, p in enumerate(folds):
-        t = time.time()
-        te = np.where(plates == p)[0]
-        tr = np.where(plates != p)[0]
-        mu, sd = Xn[tr].mean(axis=0), Xn[tr].std(axis=0)
-        sd = np.where(sd > 0, sd, 1.0)
-        Xtr, Xte = (Xn[tr] - mu) / sd, (Xn[te] - mu) / sd
-        ym = Y[tr].mean(axis=0)
-        yhat = scan(Xtr, Xte, Y[tr] - ym, ym, Y[te])
-        Yte = Y[te]
-        ss = ((Yte - Yte.mean(axis=0)) ** 2).sum(axis=0)
-        r2[fi] = 1.0 - ((Yte - yhat) ** 2).sum(axis=0) / np.where(ss > 0, ss, np.nan)
-        np.save(os.path.join(_HERE, 'results', f'gene_scan_pmcv_{a.model}_{tag}_partial.npy'), r2)
-        print(f'  fold {fi + 1}/{len(folds)} (hold out {p}): {time.time() - t:.1f}s', flush=True)
+
+    if a.combine:                                # assemble per-fold results -> CSV
+        missing = [fi for fi in range(len(folds)) if not os.path.exists(fold_path(fi))]
+        if missing:
+            raise SystemExit(f'missing folds: {missing}')
+        r2 = np.vstack([np.load(fold_path(fi)) for fi in range(len(folds))])
+    elif a.fold is not None:                     # one fold only (slurm array task)
+        fold_list = [(a.fold, folds[a.fold])]
+        r2 = np.full((1, len(genes)), np.nan)
+    else:
+        fold_list = list(enumerate(folds))
+        r2 = np.full((len(folds), len(genes)), np.nan)
+
+    if not a.combine:
+        run_rows = {fi: ri for ri, (fi, _) in enumerate(fold_list)}
+        for fi, p in fold_list:
+            t = time.time()
+            te = np.where(plates == p)[0]
+            tr = np.where(plates != p)[0]
+            mu, sd = Xn[tr].mean(axis=0), Xn[tr].std(axis=0)
+            sd = np.where(sd > 0, sd, 1.0)
+            Xtr, Xte = (Xn[tr] - mu) / sd, (Xn[te] - mu) / sd
+            ym = Y[tr].mean(axis=0)
+            yhat = scan(Xtr, Xte, Y[tr] - ym, ym, Y[te])
+            Yte = Y[te]
+            ss = ((Yte - Yte.mean(axis=0)) ** 2).sum(axis=0)
+            r2[run_rows[fi]] = 1.0 - ((Yte - yhat) ** 2).sum(axis=0) / np.where(ss > 0, ss, np.nan)
+            print(f'  fold {fi + 1}/{len(folds)} (hold out {p}): {time.time() - t:.1f}s',
+                  flush=True)
+        if a.fold is not None:
+            np.save(fold_path(a.fold), r2)
+            print(f'wrote {fold_path(a.fold)}')
+            return
+        np.save(os.path.join(_HERE, 'results',
+                f'gene_scan_pmcv_{a.model}_{tag}_partial.npy'), r2)
 
     med = np.median(r2, axis=0)
     order = np.argsort(-med)
