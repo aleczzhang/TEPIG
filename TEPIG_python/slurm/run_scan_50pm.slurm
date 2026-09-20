@@ -22,6 +22,11 @@
 module purge
 module load gcc/11.3.0
 module load python/3.10.10/gcc
+# self-contained env (module numpy is too old for pycytominer); build once with:
+#   python -m venv ~/scratch.staraptor-lab/venv_tepig
+#   source ~/scratch.staraptor-lab/venv_tepig/bin/activate
+#   pip install numpy pandas scikit-learn scipy joblib threadpoolctl pycytominer
+source /home/azzhang/scratch.staraptor-lab/venv_tepig/bin/activate
 
 cd /home/azzhang/scratch.staraptor-lab/TEPIG/TEPIG_python/cell_painting
 export SCAN_NJOBS=$SLURM_CPUS_PER_TASK
