@@ -27,6 +27,7 @@ module load python/3.10.10/gcc
 #   source ~/scratch.staraptor-lab/venv_tepig/bin/activate
 #   pip install numpy pandas scikit-learn scipy joblib threadpoolctl pycytominer
 source /home/azzhang/scratch.staraptor-lab/venv_tepig/bin/activate
+unset PYTHONPATH   # the python module injects its old site-packages into venvs
 
 cd /home/azzhang/scratch.staraptor-lab/TEPIG/TEPIG_python/cell_painting
 export SCAN_NJOBS=$SLURM_CPUS_PER_TASK

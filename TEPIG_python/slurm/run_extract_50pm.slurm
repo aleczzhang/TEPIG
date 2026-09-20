@@ -29,7 +29,7 @@ module load gcc/11.3.0
 module load python/3.10.10/gcc
 # use the scratch venv if present (see run_scan_50pm.slurm for how to build it)
 VENV=/home/azzhang/scratch.staraptor-lab/venv_tepig/bin/activate
-[ -f $VENV ] && source $VENV
+[ -f $VENV ] && source $VENV && unset PYTHONPATH
 
 cd /home/azzhang/scratch.staraptor-lab/TEPIG/TEPIG_python/cell_painting
 # PLATES and OUT can be injected per batch (zaratan_extract_batches.sh);
