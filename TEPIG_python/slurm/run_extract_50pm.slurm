@@ -29,7 +29,10 @@ module load gcc/11.3.0
 module load python/3.10.10/gcc
 
 cd /home/azzhang/scratch.staraptor-lab/TEPIG/TEPIG_python/cell_painting
-PLATES=$(tail -n +4 data/random_plate_sample.csv | cut -d, -f2 | tr '\n' ' ')
-echo "extracting plates: $PLATES"
+# PLATES and OUT can be injected per batch (zaratan_extract_batches.sh);
+# defaults = the full 50-plate single-cache run (needs >200 GB scratch quota).
+PLATES=${PLATES:-$(tail -n +4 data/random_plate_sample.csv | cut -d, -f2 | tr '\n' ' ')}
+OUT=${OUT:-cache/cdrp_50pm.pkl}
+echo "extracting plates: $PLATES -> $OUT"
 python cdrp_extract.py --plates $PLATES --download --delete-sqlite \
-    --reuse-parked --out cache/cdrp_50pm.pkl
+    --reuse-parked --out $OUT
