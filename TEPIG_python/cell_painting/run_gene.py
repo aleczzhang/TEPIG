@@ -206,6 +206,17 @@ def plain_split(n, test_frac, seed):
     return np.sort(idx[n_test:]), np.sort(idx[:n_test])
 
 
+def group_split(groups, test_frac, seed):
+    """Hold out test_frac of the GROUPS (e.g. platemaps), not of the wells:
+    the test wells' compounds are then entirely unseen during training."""
+    groups = np.asarray(groups)
+    uniq = np.unique(groups)
+    k = max(1, int(round(len(uniq) * test_frac)))
+    te_g = np.random.default_rng(seed).choice(uniq, size=k, replace=False)
+    m = np.isin(groups, te_g)
+    return np.where(~m)[0], np.where(m)[0]
+
+
 def plain_folds(train_idx, seed, k=5):
     idx = np.random.default_rng(seed).permutation(train_idx)
     return [sorted(g.tolist()) for g in np.array_split(idx, k)]

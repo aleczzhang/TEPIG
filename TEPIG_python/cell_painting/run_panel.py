@@ -29,6 +29,12 @@ ap.add_argument('--k', type=int, default=None, help='varclust: clusters (default
 ap.add_argument('--thr', type=float, default=None)
 ap.add_argument('--runs', type=int, default=10)
 ap.add_argument('--cache', default='cdrp_singlecell.pkl')
+ap.add_argument('--seeds', type=int, nargs='+', default=None,
+                help='explicit split seeds (overrides --runs); one seed per task '
+                     'in slurm arrays, output gets a _s<seed> suffix')
+ap.add_argument('--split-by-plate', action='store_true',
+                help='grouped 80/20 split: hold out 20%% of PLATES (platemaps), '
+                     'so test compounds are unseen in training')
 ap.add_argument('genes', nargs='+')
 a = ap.parse_args()
 
@@ -45,7 +51,8 @@ else:
         a.k = 262
     keep, desc = PS.unsupervised_select(a.select, Xn, feats, a.k, a.thr)
 X = X_all[:, keep, :, :]
-seeds = [42 + 100 * i for i in range(a.runs)]
+seeds = a.seeds if a.seeds else [42 + 100 * i for i in range(a.runs)]
+plates_all = np.array(c['obs_plate']) if a.split_by_plate else None
 METHODS = ['TEPIG', 'clusso', 'naive']
 print(f"panel: n={X.shape[3]} q={len(keep)} ({desc}) runs={a.runs}\n", flush=True)
 
@@ -67,7 +74,8 @@ for g in a.genes:
     mse = {m: [] for m in METHODS}
     sets = {m: [] for m in METHODS}
     for s in seeds:
-        o = one_seed(Xg, y, s, screen=screen)
+        o = one_seed(Xg, y, s, screen=screen,
+                     groups=plates_all[ok] if plates_all is not None else None)
         for m in METHODS:
             mse[m].append(o[m][0]); r2[m].append(o[m][1]); sets[m].append(list(o[m][2]))
     stab = {m: SM.summarize(sets[m], len(keep)) for m in METHODS}
@@ -81,8 +89,12 @@ for g in a.genes:
 
 tag = '' if a.cache == 'cdrp_singlecell.pkl' else '_' + os.path.splitext(a.cache)[0]
 sel = a.select + (str(a.k) if a.k else '')
+if a.seeds and len(a.seeds) == 1:          # one array task; combine pkls later
+    tag += f'_{a.genes[0]}_s{a.seeds[0]}'
 out_pkl = os.path.join(_HERE, 'results', f'panel_{sel}{tag}.pkl')
-results['_meta'] = {'select': desc, 'q': len(keep), 'n': int(X.shape[3]), 'runs': a.runs,
+results['_meta'] = {'select': desc, 'q': len(keep), 'n': int(X.shape[3]),
+                    'runs': len(seeds), 'seeds': seeds,
+                    'split': 'by-plate' if a.split_by_plate else 'random-wells',
                     'cache': a.cache}
 pickle.dump(results, open(out_pkl, 'wb'))
 log_compute('panel_total', time.time() - t_start, genes=len(a.genes), q=len(keep),

@@ -44,7 +44,7 @@ def jaccard(a, b):
     return len(a & b) / len(a | b) if (a | b) else 1.0
 
 
-def one_seed(X, y_raw, seed, log=True, screen=None):
+def one_seed(X, y_raw, seed, log=True, screen=None, groups=None):
     """Fit all three methods with a given seed; return metrics + selected sets.
     Each method's wall time is appended to results/compute_log.csv (label
     'fit_seed', extras method/q/n) so compute_plan.py can size the multi-plate run.
@@ -55,7 +55,10 @@ def one_seed(X, y_raw, seed, log=True, screen=None):
     reported in the ORIGINAL feature index space; out['keep'] is the screened set."""
     import time
     n = X.shape[3]
-    tr, te = R.plain_split(n, R.TEST_FRAC, seed)
+    if groups is not None:                 # e.g. platemap labels: grouped 80/20
+        tr, te = R.group_split(groups, R.TEST_FRAC, seed)
+    else:
+        tr, te = R.plain_split(n, R.TEST_FRAC, seed)
     _t = time.time()
     keep = None
     if screen is not None:
