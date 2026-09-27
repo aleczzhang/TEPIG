@@ -52,7 +52,10 @@ else:
     keep, desc = PS.unsupervised_select(a.select, Xn, feats, a.k, a.thr)
 X = X_all[:, keep, :, :]
 seeds = a.seeds if a.seeds else [42 + 100 * i for i in range(a.runs)]
-plates_all = np.array(c['obs_plate']) if a.split_by_plate else None
+# group by PLATEMAP when the cache carries it (replicate plates share compounds,
+# so all copies of a platemap must land on the same side of the split)
+plates_all = (np.array(c.get('obs_platemap', c['obs_plate']))
+              if a.split_by_plate else None)
 METHODS = ['TEPIG', 'clusso', 'naive']
 print(f"panel: n={X.shape[3]} q={len(keep)} ({desc}) runs={a.runs}\n", flush=True)
 

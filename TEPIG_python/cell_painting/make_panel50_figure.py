@@ -104,7 +104,7 @@ bx.text(-0.19, n_chol + (len(order) - n_chol - 1) / 2, 'ER\nSTRESS', ha='center'
         transform=bx.get_yaxis_transform())
 bx.set_xlabel('features selected relative to naive lasso (log scale)',
               fontsize=9.5, color=INK2)
-bx.legend(frameon=False, fontsize=9, loc='lower left', labelcolor=INK)
+bx.legend(frameon=False, fontsize=9, loc='upper left', labelcolor=INK)
 bx.set_title('B · Features selected, as a ratio to naive lasso',
              fontsize=10.5, color=INK, loc='left', pad=10)
 
@@ -113,7 +113,7 @@ fig.suptitle('Ten-gene panel on 50 CDRP platemaps (15,748 wells): '
              fontsize=11.5, color=INK, x=0.01, ha='left', y=1.0)
 fig.text(0.01, 0.945, 'Genes chosen by an all-978-gene screen (median leave-one-'
          'platemap-out R², permutation-null threshold); TEPIG vs naive: '
-         'ΔR² = −0.005, p = 0.002 — equal accuracy, ~half the features.',
+         'ΔR² = −0.005, p = 0.002 — equal accuracy; fewer features for most genes (up to 4× fewer for ER-stress).',
          fontsize=8.5, color=INK2)
 fig.tight_layout(rect=[0, 0, 1, 0.90])
 out = os.path.join(_HERE, 'results', 'figures', 'panel50_summary.png')
