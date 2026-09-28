@@ -2,7 +2,7 @@
 #SBATCH --job-name=cdrp_panel213
 #SBATCH --account=staraptor-lab-aac
 #SBATCH --partition=standard
-#SBATCH --time=18:00:00
+#SBATCH --time=40:00:00
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=48G
 #SBATCH --array=0-49
