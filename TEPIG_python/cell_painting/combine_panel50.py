@@ -9,7 +9,7 @@ and writes results/panel50_combined.pkl + results/panel50_table.csv.
 
 Usage:  python combine_panel50.py
 """
-import glob, os, pickle, re
+import argparse, glob, os, pickle, re
 
 import numpy as np
 from scipy.stats import ttest_1samp, wilcoxon
@@ -25,10 +25,18 @@ PROGRAM = {'HMGCS1': 'cholesterol', 'NSDHL': 'cholesterol', 'HMGCR': 'cholestero
            'CRELD2': 'ER-stress'}
 METHODS = ['TEPIG', 'clusso', 'naive']
 
+ap = argparse.ArgumentParser()
+ap.add_argument('--tag', default='cdrp_50pm_merged',
+                help="cache tag in the task filenames, e.g. cdrp_213")
+ap.add_argument('--out', default=None,
+                help="output prefix (default: panel50 / panel213 by tag)")
+a = ap.parse_args()
+PREFIX = a.out or ('panel213' if '213' in a.tag else 'panel50')
+
 merged = {}
 for f in sorted(glob.glob(os.path.join(
-        _HERE, 'results', 'panel_pycytominer_cdrp_50pm_merged_*_s*.pkl'))):
-    m = re.search(r'merged_(\w+)_s(\d+)\.pkl$', f)
+        _HERE, 'results', f'panel_pycytominer_{a.tag}_*_s*.pkl'))):
+    m = re.search(rf'{a.tag}_(\w+)_s(\d+)\.pkl$', f)
     g, seed = m.group(1), int(m.group(2))
     r = pickle.load(open(f, 'rb'))
     if g not in r:
@@ -81,11 +89,11 @@ for prog in ['cholesterol', 'ER-stress']:
     print(f'  {prog:>12}: TEPIG {tep.mean():+.3f}  naive {nai.mean():+.3f}  '
           f'({len(gs)} genes)')
 
-with open(os.path.join(_HERE, 'results', 'panel50_table.csv'), 'w') as f:
+with open(os.path.join(_HERE, 'results', f'{PREFIX}_table.csv'), 'w') as f:
     f.write('gene,program,' + ','.join(f'{m_}_{c}' for m_ in METHODS
             for c in ['r2_mean', 'r2_sd', 'phi', 'nsel']) + '\n')
     for r_ in rows:
         f.write(','.join(str(x) if isinstance(x, str) else f'{x:.4f}'
                          for x in r_) + '\n')
-pickle.dump(merged, open(os.path.join(_HERE, 'results', 'panel50_combined.pkl'), 'wb'))
-print('\nwrote results/panel50_table.csv and results/panel50_combined.pkl')
+pickle.dump(merged, open(os.path.join(_HERE, 'results', f'{PREFIX}_combined.pkl'), 'wb'))
+print(f'\nwrote results/{PREFIX}_table.csv and results/{PREFIX}_combined.pkl')
