@@ -15,6 +15,11 @@ plate == grouping by platemap.
 
 Usage:  python scan_platemap_cv.py [--model ridge|lasso] [--preselect none|pycytominer]
 Writes results/gene_scan_pmcv_<model>_<caches>.csv (gene, r2_median, r2_mean, r2_min, r2_max).
+        python scan_platemap_cv.py --caches <cache> --permute 5
+Writes the permutation null (per-gene median held-out R^2 under K outcome shuffles) to
+results/gene_scan_pmcv_<model>_<caches>_perm.csv and prints its 99th percentile.
+Folds are grouped by obs_platemap when the cache has it (merged multi-plate caches),
+otherwise by plate.
 """
 import argparse, os, pickle, time
 
@@ -42,7 +47,8 @@ def load_merged(caches=CACHES):
         Z = (Z - Z.mean(axis=0)) / np.where(Z.std(axis=0) > 0, Z.std(axis=0), 1.0)
         Y = np.column_stack([Y, Z.mean(axis=1)])
         ok = np.isfinite(Y).all(axis=1)
-        return (Xn[ok], Y[ok], np.array(list(c['obs_plate']))[ok],
+        grp = c.get('obs_platemap', c['obs_plate'])     # merged caches carry platemaps
+        return (Xn[ok], Y[ok], np.array(list(grp))[ok],
                 [str(f) for f in c['features']], genes + ['CELLCYCLE'])
     sets = [{str(g) for g in c['features']} for c in cs[1:]]
     shared = [f for f in map(str, cs[0]['features'])
@@ -60,7 +66,7 @@ def load_merged(caches=CACHES):
         Z = c['expr'][:, cc]
         Z = (Z - Z.mean(axis=0)) / np.where(Z.std(axis=0) > 0, Z.std(axis=0), 1.0)
         Ys.append(np.column_stack([Y, Z.mean(axis=1)]))
-        plates += list(c['obs_plate'])
+        plates += list(c.get('obs_platemap', c['obs_plate']))
     Xn, Y = np.vstack(Xs), np.vstack(Ys)
     ok = np.isfinite(Y).all(axis=1)
     return Xn[ok], Y[ok], np.array(plates)[ok], shared, genes + ['CELLCYCLE']
@@ -77,6 +83,11 @@ def main():
                          'saving results/..._fold<i>.npy and exiting')
     ap.add_argument('--combine', action='store_true',
                     help='assemble per-fold npy files from --fold runs into the CSV')
+    ap.add_argument('--permute', type=int, default=0,
+                    help='instead of the real screen, run K permutation-null screens '
+                         '(outcome rows shuffled across wells, same folds/model) and '
+                         'write results/gene_scan_pmcv_<model>_<tag>_perm.csv')
+    ap.add_argument('--seed', type=int, default=0, help='rng seed for --permute')
     a = ap.parse_args()
     t0 = time.time()
 
@@ -96,6 +107,41 @@ def main():
     fold_path = lambda fi: os.path.join(
         _HERE, 'results', f'gene_scan_pmcv_{a.model}_{tag}_fold{fi:02d}.npy')
     scan = ridge_scan_split if a.model == 'ridge' else lasso_scan_split
+
+    if a.permute:                                # Haghighi-style permutation null
+        rng = np.random.default_rng(a.seed)
+        meds = np.empty((a.permute, len(genes)))
+        for k in range(a.permute):
+            Yp = Y[rng.permutation(len(Y))]          # one shuffle shared by all genes
+            r2p = np.full((len(folds), len(genes)), np.nan)
+            for fi, p in enumerate(folds):
+                te = np.where(plates == p)[0]
+                tr = np.where(plates != p)[0]
+                mu, sd = Xn[tr].mean(axis=0), Xn[tr].std(axis=0)
+                sd = np.where(sd > 0, sd, 1.0)
+                Xtr, Xte = (Xn[tr] - mu) / sd, (Xn[te] - mu) / sd
+                ym = Yp[tr].mean(axis=0)
+                yhat = scan(Xtr, Xte, Yp[tr] - ym, ym, Yp[te])
+                Yte = Yp[te]
+                ss = ((Yte - Yte.mean(axis=0)) ** 2).sum(axis=0)
+                r2p[fi] = 1.0 - ((Yte - yhat) ** 2).sum(axis=0) / np.where(ss > 0, ss, np.nan)
+            meds[k] = np.median(r2p, axis=0)
+            print(f'  permutation {k + 1}/{a.permute}: median-R2 99th pct '
+                  f'{np.nanpercentile(meds[k], 99):+.4f}, max {np.nanmax(meds[k]):+.4f} '
+                  f'({time.time() - t0:.0f}s)', flush=True)
+        out = os.path.join(_HERE, 'results', f'gene_scan_pmcv_{a.model}_{tag}_perm.csv')
+        with open(out, 'w') as f:
+            f.write('gene,' + ','.join(f'perm{k}' for k in range(a.permute)) + '\n')
+            for i, g in enumerate(genes):
+                f.write(g + ',' + ','.join(f'{v:.4f}' for v in meds[:, i]) + '\n')
+        allv = meds[np.isfinite(meds)]
+        print(f'\npermutation null over {a.permute} x {len(genes)} median held-out R2: '
+              f'99th percentile {np.percentile(allv, 99):+.4f}, max {allv.max():+.4f}; '
+              f'Haghighi rule threshold = 99th pct + margin')
+        log_compute('gene_scan_pmcv_perm', time.time() - t0, genes=len(genes), n=len(Y),
+                    q=Xn.shape[1], folds=len(folds), model=a.model, perms=a.permute)
+        print(f'wrote {out}')
+        return
 
     if a.combine:                                # assemble per-fold results -> CSV
         missing = [fi for fi in range(len(folds)) if not os.path.exists(fold_path(fi))]

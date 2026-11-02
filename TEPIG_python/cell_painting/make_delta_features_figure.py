@@ -11,7 +11,7 @@
 Reads results/panel50_combined.pkl; writes results/figures/delta_features.png
 and results/hmgcs1_selection_freq.csv (per-feature frequencies, all methods).
 """
-import os, pickle, re
+import argparse, os, pickle, re
 
 import numpy as np
 from scipy.stats import t as tdist
@@ -20,7 +20,14 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-d = pickle.load(open(os.path.join(_HERE, 'results', 'panel50_combined.pkl'), 'rb'))
+ap = argparse.ArgumentParser()
+ap.add_argument('--combined', default='panel50_combined.pkl',
+                help='combined pkl in results/ (e.g. panel213_combined.pkl)')
+ap.add_argument('--label', default='50-platemap panel run',
+                help='run label for the figure title')
+ap.add_argument('--suffix', default='', help="output suffix, e.g. '_213'")
+args = ap.parse_args()
+d = pickle.load(open(os.path.join(_HERE, 'results', args.combined), 'rb'))
 GENES = ['HMGCS1', 'NSDHL', 'HMGCR', 'FDFT1', 'INSIG1', 'TMEM97',
          'HERPUD1', 'XBP1', 'CREB3L2', 'CRELD2']
 SURF, INK, INK2 = '#fcfcfb', '#0b0b0b', '#52514e'
@@ -37,7 +44,12 @@ def ci(v):
     h = tdist.ppf(0.975, len(v) - 1) * v.std(ddof=1) / np.sqrt(len(v))
     return v.mean(), h
 
-g0 = 'HMGCS1'
+# deep-dive gene = best mean R^2 across the three methods for THIS run
+def meanr2(g):
+    r = d[g]['r2']
+    return np.mean([v for m in r for v in r[m].values()])
+g0 = max(GENES, key=meanr2)
+print(f'deep-dive gene: {g0} (mean R2 {meanr2(g0):.3f})')
 feats = d[g0]['features']
 freq = {}
 for m in ['TEPIG', 'clusso', 'naive']:
@@ -45,7 +57,7 @@ for m in ['TEPIG', 'clusso', 'naive']:
     for sel in d[g0]['sets'][m].values():
         f[list(sel)] += 1
     freq[m] = f / 5
-with open(os.path.join(_HERE, 'results', 'hmgcs1_selection_freq.csv'), 'w') as fh:
+with open(os.path.join(_HERE, 'results', f'{g0.lower()}_selection_freq{args.suffix}.csv'), 'w') as fh:
     fh.write('feature,freq_TEPIG,freq_CLUSSO,freq_naive\n')
     for i, name in enumerate(feats):
         if max(freq['TEPIG'][i], freq['clusso'][i], freq['naive'][i]) > 0:
@@ -125,7 +137,7 @@ bx.text(0.21, 0.90, 'TEPIG', color=COL['TEPIG'], fontsize=9.5, fontweight='bold'
 bx.text(0.68, 0.90, 'CLUSSO', color=COL['CLUSSO'], fontsize=9.5, fontweight='bold')
 bx.text(0.435, 0.075, 'naive', color=COL['naive'], fontsize=9.5, fontweight='bold')
 bx.set_xlim(0, 1); bx.set_ylim(0, 1)
-bx.set_title('B · HMGCS1: stably selected features (≥3/5 splits)',
+bx.set_title(f'B · {g0}: stably selected features (≥3/5 splits)',
              fontsize=10, color=INK, loc='left', pad=8)
 
 # ── C: where the exclusive picks live ──────────────────────────────────────
@@ -139,11 +151,11 @@ cx.set_yticks(yc, groups, fontsize=8, color=INK)
 cx.invert_yaxis()
 cx.set_xlabel('stable features exclusive to method', fontsize=9, color=INK2)
 cx.legend(frameon=False, fontsize=7.5, loc='lower right', labelcolor=INK)
-cx.set_title('C · HMGCS1: what each method picks alone', fontsize=10,
+cx.set_title(f'C · {g0}: what each method picks alone', fontsize=10,
              color=INK, loc='left', pad=8)
 
-fig.suptitle('Method differences on the 50-platemap panel run', fontsize=11.5,
+fig.suptitle(f'Method differences on the {args.label}', fontsize=11.5,
              color=INK, x=0.075, ha='left', y=0.985)
-out = os.path.join(_HERE, 'results', 'figures', 'delta_features.png')
+out = os.path.join(_HERE, 'results', 'figures', f'delta_features{args.suffix}.png')
 fig.savefig(out, facecolor=SURF, bbox_inches='tight')
 print('wrote', out)

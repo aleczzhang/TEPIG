@@ -10,7 +10,7 @@ Reads results/panel50_table.csv when present (the Zaratan output of
 combine_panel50.py); otherwise uses the embedded copy of those numbers
 (21 Sep 2026 run). Writes results/figures/panel50_summary.png.
 """
-import csv, os
+import argparse, csv, os, pickle
 
 import matplotlib
 matplotlib.use('Agg')
@@ -30,9 +30,33 @@ EMBED = {
     'CREB3L2': ('ER stress',   (.038, .008, 24),  (.042, .015, 72),  (.044, .013, 102)),
     'CRELD2':  ('ER stress',   (.040, .020, 40),  (.042, .029, 92),  (.044, .028, 78)),
 }
+ap = argparse.ArgumentParser()
+ap.add_argument('--combined', default=None,
+                help='build the table from a results/<combined>.pkl instead of the CSV')
+ap.add_argument('--out', default='panel50_summary.png')
+ap.add_argument('--title', default='Ten-gene panel on 50 CDRP platemaps '
+                                   '(15,748 wells): grouped 40/10 platemap '
+                                   'splits, pycytominer features')
+ap.add_argument('--subtitle', default='Genes chosen by an all-978-gene screen '
+                '(median leave-one-platemap-out R\u00b2, permutation-null threshold); '
+                'TEPIG vs naive: \u0394R\u00b2 = \u22120.005, p = 0.002 \u2014 equal accuracy; '
+                'fewer features for most genes (up to 4\u00d7 fewer for ER-stress).')
+args = ap.parse_args()
+
 csv_path = os.path.join(_HERE, 'results', 'panel50_table.csv')
 data = {}
-if os.path.exists(csv_path):
+if args.combined:
+    import numpy as np
+    dd = pickle.load(open(os.path.join(_HERE, 'results', args.combined), 'rb'))
+    for g, row in EMBED.items():
+        r, sets = dd[g]['r2'], dd[g]['sets']
+        vals = []
+        for m in ['TEPIG', 'clusso', 'naive']:
+            v = np.array(list(r[m].values()))
+            nsel = np.mean([len(x) for x in sets[m].values()])
+            vals.append((v.mean(), v.std(ddof=0), nsel))
+        data[g] = (row[0], *vals)
+elif os.path.exists(csv_path):
     for r in csv.DictReader(open(csv_path)):
         data[r['gene']] = (
             'cholesterol' if r['program'] == 'cholesterol' else 'ER stress',
@@ -108,15 +132,10 @@ bx.legend(frameon=False, fontsize=9, loc='upper left', labelcolor=INK)
 bx.set_title('B · Features selected, as a ratio to naive lasso',
              fontsize=10.5, color=INK, loc='left', pad=10)
 
-fig.suptitle('Ten-gene panel on 50 CDRP platemaps (15,748 wells): '
-             'grouped 40/10 platemap splits, pycytominer features',
-             fontsize=11.5, color=INK, x=0.01, ha='left', y=1.0)
-fig.text(0.01, 0.945, 'Genes chosen by an all-978-gene screen (median leave-one-'
-         'platemap-out R², permutation-null threshold); TEPIG vs naive: '
-         'ΔR² = −0.005, p = 0.002 — equal accuracy; fewer features for most genes (up to 4× fewer for ER-stress).',
-         fontsize=8.5, color=INK2)
+fig.suptitle(args.title, fontsize=11.5, color=INK, x=0.01, ha='left', y=1.0)
+fig.text(0.01, 0.945, args.subtitle, fontsize=8.5, color=INK2)
 fig.tight_layout(rect=[0, 0, 1, 0.90])
-out = os.path.join(_HERE, 'results', 'figures', 'panel50_summary.png')
+out = os.path.join(_HERE, 'results', 'figures', args.out)
 os.makedirs(os.path.dirname(out), exist_ok=True)
 fig.savefig(out, facecolor=SURF, bbox_inches='tight')
 print('wrote', out)

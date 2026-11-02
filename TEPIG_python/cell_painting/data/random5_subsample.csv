@@ -1,0 +1,8 @@
+# 5 platemaps drawn from the 50 fully-covered ones with default_rng(512),
+# plates are the seed-2026 random picks from random_plate_sample.csv. 12 Sep 2026.
+platemap,plate
+H-BIOA-003-3,25962
+H-CBLB-003-4,24565
+H-CBLG-001-4,25890
+H-CBLN-001-4,26772
+H-CBLO-001-4,26662
