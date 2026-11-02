@@ -1,0 +1,11 @@
+# TEPIG pinned environment (local .venv_inspect; the Zaratan venv runs Python 3.10 with scikit-learn 1.7.2).
+# scan_platemap_cv.py calls LassoCV(alphas=<int>), which needs scikit-learn >= 1.7.
+numpy>=2.0,<3
+scipy>=1.13
+pandas>=2.2
+scikit-learn>=1.7,<2
+joblib>=1.4
+matplotlib>=3.9
+pycytominer==1.7.1
+pyarrow>=16
+SQLAlchemy>=2.0
