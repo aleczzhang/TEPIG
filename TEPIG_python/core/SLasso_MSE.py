@@ -50,16 +50,20 @@ def CV_make_folds(n_train):
     return folds
 
 
-def lambda_CV_mse(X_train, Y_train, alpha_init, beta_init, lam):
+def lambda_CV_mse(X_train, Y_train, alpha_init, beta_init, lam, folds=None):
     """
     5-fold cross-validated MSE for a given regularisation value lam.
+    folds: optional list of 5 index lists (positions into X_train's last axis)
+    so the folds are seeded and shared across lambda values and estimators;
+    if None, folds are drawn from the global numpy RNG as in the R original.
     """
-    folds       = CV_make_folds(X_train.shape[2])
+    if folds is None:
+        folds = CV_make_folds(X_train.shape[2])
     all_indices = list(range(X_train.shape[2]))
     mse_vec     = []
 
-    for k in range(5):
-        test_idx  = folds[k]
+    for k in range(len(folds)):
+        test_idx  = list(folds[k])
         train_idx = sorted(set(all_indices) - set(test_idx))
         mse       = slasso_mse(
             X_train[:, :, train_idx], Y_train[train_idx],
